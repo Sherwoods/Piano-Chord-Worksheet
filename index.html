@@ -283,10 +283,10 @@ function fitStart(cell, n) {
 /* ================= Styles ================= */
 const PRESETS = ['#1F3A93', '#7D1D2C', '#2E6B3A', '#4B2C6F', '#222222', '#F2A541', '#8FC3E8', '#F4A3B4', '#B7E07A', '#BDBDBD'];
 const DEFAULT_STYLES = {
-  L: { type: 'key', color: '#1F3A93', pattern: 'stripes' },
-  R: { type: 'key', color: '#F2A541', pattern: 'stripes' }
+  L: { type: 'key', color: '#1F3A93', pattern: 'stripes', names: false },
+  R: { type: 'key', color: '#F2A541', pattern: 'stripes', names: false }
 };
-const STYLE_TYPES = [['key', 'Color'], ['pattern', 'Pattern'], ['dot', 'Dot'], ['label', 'Dot + name']];
+const STYLE_TYPES = [['key', 'Color'], ['pattern', 'Pattern'], ['dot', 'Dot']];
 const PATTERNS = [['stripes', 'Stripes'], ['cross', 'Crosshatch'], ['dots', 'Polka dots']];
 function hexToRgb(h) { const x = parseInt(h.slice(1), 16); return [(x >> 16) & 255, (x >> 8) & 255, x & 255]; }
 function lum(h) {
@@ -325,6 +325,8 @@ function sanitizeStyle(s, fallback) {
   const out = Object.assign({}, fallback);
   if (s && typeof s === 'object') {
     if (STYLE_TYPES.some(t => t[0] === s.type)) out.type = s.type;
+    if (s.type === 'label') { out.type = 'dot'; out.names = true; }
+    if (typeof s.names === 'boolean') out.names = s.names;
     if (typeof s.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(s.color)) out.color = s.color;
     if (PATTERNS.some(p => p[0] === s.pattern)) out.pattern = s.pattern;
   }
@@ -444,18 +446,20 @@ function patternDef(id, st, bg) {
 }
 function markShape(m, x, white, st, acc, pid) {
   const w = white ? WW : BW, h = white ? WH : BH;
-  if (st.type === 'key') return `<rect class="mark" x="${x}" y="0" width="${w}" height="${h}" fill="${st.color}" stroke="#1E2433" stroke-width="1" pointer-events="none"/>`;
-  if (st.type === 'pattern') return `<rect class="mark" x="${x}" y="0" width="${w}" height="${h}" fill="url(#${pid})" stroke="#1E2433" stroke-width="1" pointer-events="none"/>`;
-  const cx = x + w / 2;
-  if (st.type === 'dot') {
-    const r = white ? 7 : 5, cy = h - (white ? 13 : 10);
-    return `<circle class="mark" cx="${cx}" cy="${cy}" r="${r}" fill="${st.color}" stroke="#1E2433" stroke-width="1" pointer-events="none"/>`;
+  const cx = x + w / 2, cy = h - (white ? 13 : 10), r = 8.5;
+  let out = '';
+  if (st.type === 'key') out = `<rect x="${x}" y="0" width="${w}" height="${h}" fill="${st.color}" stroke="#1E2433" stroke-width="1"/>`;
+  else if (st.type === 'pattern') out = `<rect x="${x}" y="0" width="${w}" height="${h}" fill="url(#${pid})" stroke="#1E2433" stroke-width="1"/>`;
+  else if (!st.names) out = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${st.color}" stroke="#1E2433" stroke-width="1"/>`;
+  if (st.names) {
+    // Named dot sits on top of the key fill; on a filled key it is white so the letter stays readable.
+    const fill = st.type === 'dot' ? st.color : '#FFFFFF';
+    const tc = lum(fill) < 0.35 ? '#FFFFFF' : '#1E2433';
+    const label = notePc(m, acc);
+    const fs = label.length > 1 ? 8.5 : 10;
+    out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="#1E2433" stroke-width="1"/><text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="${fs}" fill="${tc}">${esc(label)}</text>`;
   }
-  const r = 8.5, cy = h - (white ? 13 : 10);
-  const tc = lum(st.color) < 0.35 ? '#FFFFFF' : '#1E2433';
-  const label = notePc(m, acc);
-  const fs = label.length > 1 ? 8.5 : 10;
-  return `<g class="mark" pointer-events="none"><circle cx="${cx}" cy="${cy}" r="${r}" fill="${st.color}" stroke="#1E2433" stroke-width="1"/><text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="${fs}" fill="${tc}">${esc(label)}</text></g>`;
+  return `<g class="mark" pointer-events="none">${out}</g>`;
 }
 function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } = {}) {
   const count = KEYS_PER_ROW[n];
@@ -816,6 +820,7 @@ function openStyles(target) {
         return `<div class="hand-style"><h3>${h === 'L' ? 'Left hand' : 'Right hand'}</h3>
           <div class="seg" role="group" aria-label="Mark style">${STYLE_TYPES.map(([v, l]) => `<button data-s="type" data-h="${h}" data-v="${v}" aria-pressed="${st.type === v}">${l}</button>`).join('')}</div>
           ${st.type === 'pattern' ? `<div class="seg" role="group" aria-label="Pattern" style="margin-top:8px">${PATTERNS.map(([v, l]) => `<button data-s="pattern" data-h="${h}" data-v="${v}" aria-pressed="${st.pattern === v}">${l}</button>`).join('')}</div>` : ''}
+          <label class="check"><input type="checkbox" data-s="names" data-h="${h}" ${st.names ? 'checked' : ''}> Show note names</label>
           <div class="swatches">${PRESETS.map(c => `<button data-s="color" data-h="${h}" data-v="${c}" style="background:${c}" aria-label="Color ${c}" aria-pressed="${st.color.toLowerCase() === c.toLowerCase()}"></button>`).join('')}
             <input type="color" data-s="custom" data-h="${h}" value="${st.color}" aria-label="Custom color"></div>
         </div>`;
@@ -840,6 +845,7 @@ function openStyles(target) {
       return;
     }
     if (a === 'default') { makeDefault = b.checked; return; }
+    if (a === 'names') { work[h].names = b.checked; draw(); return; }
     if (a === 'custom') return;
     if (a === 'type') work[h].type = b.dataset.v;
     if (a === 'pattern') work[h].pattern = b.dataset.v;

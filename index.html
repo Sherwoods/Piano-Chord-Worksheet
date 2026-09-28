@@ -451,10 +451,10 @@ function markShape(m, x, white, st, acc, pid) {
     const r = white ? 7 : 5, cy = h - (white ? 13 : 10);
     return `<circle class="mark" cx="${cx}" cy="${cy}" r="${r}" fill="${st.color}" stroke="#1E2433" stroke-width="1" pointer-events="none"/>`;
   }
-  const r = white ? 8.5 : 5.8, cy = h - (white ? 13 : 10);
+  const r = 8.5, cy = h - (white ? 13 : 10);
   const tc = lum(st.color) < 0.35 ? '#FFFFFF' : '#1E2433';
   const label = notePc(m, acc);
-  const fs = white ? (label.length > 1 ? 8.5 : 10) : (label.length > 1 ? 5.4 : 6.5);
+  const fs = label.length > 1 ? 8.5 : 10;
   return `<g class="mark" pointer-events="none"><circle cx="${cx}" cy="${cy}" r="${r}" fill="${st.color}" stroke="#1E2433" stroke-width="1"/><text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="${fs}" fill="${tc}">${esc(label)}</text></g>`;
 }
 function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } = {}) {

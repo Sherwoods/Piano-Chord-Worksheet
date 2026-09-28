@@ -1,5 +1,5 @@
 // Chord Worksheet service worker: offline support.
-const CACHE = 'chord-worksheet-v2';
+const CACHE = 'chord-worksheet-v3';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

@@ -134,7 +134,15 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
   display: flex; flex-direction: column; font-family: var(--sheet-ui); font-size: 16px; line-height: 1.4;
 }
 .paper-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-bottom: 10px; border-bottom: 2px solid #1E2433; margin-bottom: 18px; }
-.paper-title { font-family: var(--sheet-display); font-size: 30px; line-height: 1; margin: 0; }
+.paper-title { font-family: var(--sheet-display); font-size: 30px; line-height: 1; margin: 0; min-width: 120px; outline: none; border-bottom: 2px dashed transparent; }
+.paper-title[contenteditable]:hover, .paper-title[contenteditable]:focus { border-bottom-color: #EBD9D6; }
+.paper-title[contenteditable]:empty::before { content: 'Tap to add a title'; color: #B9B1A3; }
+@media print { .paper-title[contenteditable]:empty::before { content: none; } }
+.cell[data-pos] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.cell.dragging { opacity: .35; }
+.cell.drop-target { outline: 3px dashed #7D1D2C !important; outline-offset: 5px; }
+.drag-ghost { position: fixed; z-index: 90; pointer-events: none; opacity: .9; background: #fff; box-shadow: 0 8px 24px rgba(40,34,24,.25); transform-origin: top left; }
+.fingers { display: flex; align-items: center; gap: 6px; margin-top: var(--s2); flex-wrap: wrap; }
 .name-line { display: flex; gap: 18px; font-size: 13px; color: #1E2433; }
 .name-line span { display: inline-block; border-bottom: 1px solid #1E2433; min-width: 150px; padding-top: 14px; }
 .name-line span.date { min-width: 90px; }
@@ -316,10 +324,10 @@ function persist() {
   catch (e) { if (storageOk) toast('This device won’t save right now. Export a backup to keep your work.'); storageOk = false; }
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-function newCell(n) { return { name: '', acc: 'sharp', start: DEFAULT_START[n], marks: {} }; }
+function newCell(n) { return { name: '', acc: 'sharp', start: DEFAULT_START[n], marks: {}, fingers: {} }; }
 function newRow(n) { return { n, cells: Array.from({ length: n }, () => newCell(n)) }; }
 function newPage(ns) { return { rows: ns.map(newRow) }; }
-function cellHasContent(c) { return !!(c.name.trim() || Object.keys(c.marks).length); }
+function cellHasContent(c) { return !!(c.name.trim() || Object.keys(c.marks).length || Object.keys(c.fingers || {}).length); }
 
 function sanitizeStyle(s, fallback) {
   const out = Object.assign({}, fallback);
@@ -341,6 +349,9 @@ function sanitizeCell(c, n) {
   if (c.marks && typeof c.marks === 'object') {
     for (const k in c.marks) { const m = +k; if (m >= LOW && m <= HIGH && (c.marks[k] === 'L' || c.marks[k] === 'R')) out.marks[m] = c.marks[k]; }
   }
+  if (c.fingers && typeof c.fingers === 'object') {
+    for (const k in c.fingers) { const m = +k, v = c.fingers[k]; if (m >= LOW && m <= HIGH && [1, 2, 3, 4, 5].includes(v)) out.fingers[m] = v; }
+  }
   if (Number.isInteger(c.start)) out.start = clamp(c.start, 0, maxStart(KEYS_PER_ROW[n]));
   return out;
 }
@@ -356,6 +367,7 @@ function sanitizeSheet(s) {
   return {
     id: typeof s.id === 'string' ? s.id : uid(),
     name: typeof s.name === 'string' && s.name.trim() ? s.name.slice(0, 80) : 'Untitled sheet',
+    title: typeof s.title === 'string' ? s.title.slice(0, 80) : 'Chord Worksheet',
     updated: Number.isFinite(s.updated) ? s.updated : Date.now(),
     styles: sanitizeStyles(s.styles),
     print: { names: !(s.print && s.print.names === false), marks: !(s.print && s.print.marks === false), nameLine: !(s.print && s.print.nameLine === false) },
@@ -374,7 +386,7 @@ const STARTERS = [
 ];
 
 /* ================= View state ================= */
-const view = { screen: 'home', sheetId: null, layout: false, editor: null, hand: 'R', layoutRow: null };
+const view = { screen: 'home', sheetId: null, layout: false, editor: null, hand: 'R', layoutRow: null, tap: 'mark', finger: 1 };
 let undoStack = [];
 const sheet = () => data.sheets.find(s => s.id === view.sheetId);
 function pushUndo() {
@@ -467,13 +479,17 @@ function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } =
   const s = cell.start;
   const whites = WHITES.slice(s, s + count);
   const id = 'k' + (++svgSeq);
-  const W = count * WW + 1, H = WH + 9;
+  const W = count * WW + 1, H = WH + 24;
+  const fingers = cell.fingers || {};
+  let fk = '';
+  const finger = (m, cx) => { if (fingers[m]) fk += `<text class="mark" x="${cx}" y="${WH + 19}" text-anchor="middle" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="11" fill="#1E2433" pointer-events="none">${fingers[m]}</text>`; };
   const bg = { L: patternDef(id + 'L', styles.L, '#FFFFFF') + patternDef(id + 'Lb', styles.L, '#8A8A8A'),
                R: patternDef(id + 'R', styles.R, '#FFFFFF') + patternDef(id + 'Rb', styles.R, '#8A8A8A') };
   let wk = '', wm = '', bk = '', bm = '';
   whites.forEach((m, i) => {
     const x = 0.5 + i * WW;
     wk += `<rect ${interactive ? `data-midi="${m}" role="button" aria-label="${noteName(m, cell.acc)}"` : ''} x="${x}" y="0.5" width="${WW}" height="${WH}" fill="#FFFFFF" stroke="#1E2433" stroke-width="1"/>`;
+    finger(m, x + WW / 2);
     if (cell.marks[m]) wm += markShape(m, x, true, styles[cell.marks[m]], cell.acc, id + cell.marks[m]);
     if (m === MIDDLE_C) wk += `<path d="M${x + WW / 2 - 4} ${WH + 8.5} L${x + WW / 2} ${WH + 3} L${x + WW / 2 + 4} ${WH + 8.5} Z" fill="#7D1D2C"/>`;
   });
@@ -483,10 +499,11 @@ function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } =
     if (isWhite(b) || b > HIGH) return;
     const x = 0.5 + (i + 1) * WW - BW / 2;
     bk += `<rect ${interactive ? `data-midi="${b}" role="button" aria-label="${noteName(b, cell.acc)}"` : ''} x="${x}" y="0.5" width="${BW}" height="${BH}" fill="#8A8A8A" stroke="#1E2433" stroke-width="1" rx="1"/>`;
+    finger(b, x + BW / 2);
     if (cell.marks[b]) bm += markShape(b, x, false, styles[cell.marks[b]], cell.acc, id + cell.marks[b] + 'b');
   });
   const size = pxPerKey ? `width="${count * pxPerKey}" height="${Math.round(H * pxPerKey / WW)}"` : '';
-  return `<svg viewBox="0 0 ${W} ${H}" ${size} preserveAspectRatio="xMinYMid meet" xmlns="http://www.w3.org/2000/svg" aria-hidden="${interactive ? 'false' : 'true'}"><defs>${bg.L}${bg.R}</defs>${wk}${wm}${bk}${bm}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" ${size} preserveAspectRatio="xMinYMid meet" xmlns="http://www.w3.org/2000/svg" aria-hidden="${interactive ? 'false' : 'true'}"><defs>${bg.L}${bg.R}</defs>${wk}${wm}${bk}${bm}${fk}</svg>`;
 }
 
 /* ================= Rendering ================= */
@@ -537,7 +554,7 @@ function pageScale() {
 function cellHTML(cell, n, styles, pi, ri, ci, editable) {
   const out = outOfView(cell, n);
   const active = view.editor && view.editor.pi === pi && view.editor.ri === ri && view.editor.ci === ci;
-  return `<div class="cell ${active ? 'active' : ''}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cell.name || 'blank')}"` : ''}>
+  return `<div class="cell ${active ? 'active' : ''}" data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cell.name || 'blank')}"` : ''}>
     <span class="cell-name"><span class="cell-name-text">${esc(cell.name)}</span></span>
     ${keyboardSVG(cell, n, styles)}
     ${out ? `<span class="flag">${out} note${out > 1 ? 's' : ''} out of view</span>` : ''}
@@ -570,7 +587,7 @@ function renderSheet() {
         <div class="paper-frame" style="height:${Math.round(1056 * scale)}px">
           <div class="paper ${editable ? 'editable' : ''}" style="transform:scale(${scale})">
             <div class="paper-header">
-              <h2 class="paper-title">Chord Worksheet</h2>
+              <h2 class="paper-title" contenteditable="true" spellcheck="false" aria-label="Worksheet title">${esc(s.title)}</h2>
               <div class="name-line"><span>Name</span><span class="date">Date</span></div>
             </div>
             <div class="rows" style="grid-template-rows:repeat(${Math.max(p.rows.length, 4)}, minmax(0, 1fr)); --kh:${kbMax(p.rows.length)}px">
@@ -649,6 +666,12 @@ function renderEditor(keepScroll) {
         <button data-e="acc" data-v="flat" aria-pressed="${cell.acc === 'flat'}">♭</button>
       </div></div>
     </div>
+    <div class="fingers"><span class="lbl">Tap keys to</span><div class="seg" role="group" aria-label="Tap mode">
+        <button data-e="tap" data-v="mark" aria-pressed="${view.tap === 'mark'}">Mark notes</button>
+        <button data-e="tap" data-v="finger" aria-pressed="${view.tap === 'finger'}">Add finger numbers</button>
+      </div>
+      ${view.tap === 'finger' ? `<div class="seg" role="group" aria-label="Finger">${[1, 2, 3, 4, 5].map(k => `<button data-e="finger" data-v="${k}" aria-pressed="${view.finger === k}">${k}</button>`).join('')}</div>` : ''}
+    </div>
     <div class="kbd-scroll"><div class="felt"></div>${keyboardSVG(cell, n, st, { interactive: true, pxPerKey: 42 })}</div>
     <div class="shift-row">
       <button class="btn" data-e="shift" data-v="-7" aria-label="Down an octave">«</button>
@@ -659,7 +682,7 @@ function renderEditor(keepScroll) {
     </div>
     ${out ? `<div class="warn">${out} marked note${out > 1 ? 's are' : ' is'} outside this keyboard. Shift the range or clear the chord.${KEYS_PER_ROW[n] < 29 ? ' Fewer chords in this row gives a wider keyboard.' : ''}</div>` : ''}
     <div class="editor-actions">
-      <button class="btn" data-e="clear-notes" ${Object.keys(cell.marks).length ? '' : 'disabled'}>Clear notes</button>
+      <button class="btn" data-e="clear-notes" ${Object.keys(cell.marks).length || Object.keys(cell.fingers || {}).length ? '' : 'disabled'}>Clear notes</button>
       <button class="btn" data-e="clear-all" ${cellHasContent(cell) ? '' : 'disabled'}>Clear chord</button>
       <span class="grow"></span>
       <button class="btn" data-e="copy-next" ${idx < total - 1 && cellHasContent(cell) ? '' : 'disabled'}>Copy to next</button>
@@ -705,7 +728,11 @@ async function onEditorClick(ev) {
   if (key) {
     const m = +key.dataset.midi;
     pushUndo(); nameUndoPushed = false;
-    if (cell.marks[m] === view.hand) delete cell.marks[m];
+    if (!cell.fingers) cell.fingers = {};
+    if (view.tap === 'finger') {
+      if (cell.fingers[m] === view.finger) delete cell.fingers[m];
+      else cell.fingers[m] = view.finger;
+    } else if (cell.marks[m] === view.hand) { delete cell.marks[m]; delete cell.fingers[m]; }
     else cell.marks[m] = view.hand;
     touch(); refreshActiveCell(); renderEditor(true); return;
   }
@@ -715,14 +742,16 @@ async function onEditorClick(ev) {
   nameUndoPushed = false;
   if (act === 'done') closeEditor();
   else if (act === 'prev' || act === 'next') { view.editor = order[idx + (act === 'next' ? 1 : -1)]; renderSheet(); renderEditor(); scrollCellIntoView(); }
-  else if (act === 'hand') { view.hand = b.dataset.v; renderEditor(true); }
+  else if (act === 'hand') { view.hand = b.dataset.v; view.tap = 'mark'; renderEditor(true); }
+  else if (act === 'tap') { view.tap = b.dataset.v; renderEditor(true); }
+  else if (act === 'finger') { view.finger = +b.dataset.v; view.tap = 'finger'; renderEditor(true); }
   else if (act === 'acc') { pushUndo(); cell.acc = b.dataset.v; touch(); refreshActiveCell(); renderEditor(true); }
   else if (act === 'shift') {
     const count = KEYS_PER_ROW[row.n];
     const ns = clamp(cell.start + +b.dataset.v, 0, maxStart(count));
     if (ns !== cell.start) { pushUndo(); cell.start = ns; touch(); refreshActiveCell(); renderEditor(true); }
   }
-  else if (act === 'clear-notes') { pushUndo(); cell.marks = {}; touch(); refreshActiveCell(); renderEditor(true); }
+  else if (act === 'clear-notes') { pushUndo(); cell.marks = {}; cell.fingers = {}; touch(); refreshActiveCell(); renderEditor(true); }
   else if (act === 'clear-all') { pushUndo(); Object.assign(cell, newCell(row.n)); touch(); refreshActiveCell(); renderEditor(); }
   else if (act === 'copy-next') {
     const nx = order[idx + 1];
@@ -985,6 +1014,7 @@ async function sheetMenu(id) {
 
 /* ================= Events ================= */
 app.addEventListener('click', async e => {
+  if (suppressClick) { e.preventDefault(); return; }
   const st = e.target.closest('[data-starter]');
   if (st) return createSheet(STARTERS[+st.dataset.starter]);
   const op = e.target.closest('[data-open]'); if (op) return openSheet(op.dataset.open);
@@ -1018,6 +1048,115 @@ app.addEventListener('keydown', e => {
     e.preventDefault(); const [pi, ri, ci] = e.target.dataset.cell.split(',').map(Number); openEditor(pi, ri, ci);
   }
 });
+/* ================= Title editing ================= */
+let titleUndoPushed = false;
+app.addEventListener('input', e => {
+  if (!e.target.matches('.paper-title')) return;
+  const s = sheet(); if (!s) return;
+  if (!titleUndoPushed) { pushUndo(); titleUndoPushed = true; }
+  s.title = e.target.textContent.slice(0, 80);
+  app.querySelectorAll('.paper-title').forEach(h => { if (h !== e.target) h.textContent = s.title; });
+  touch();
+  const u = app.querySelector('[data-act="undo"]'); if (u) u.disabled = !undoStack.length;
+});
+app.addEventListener('keydown', e => { if (e.target.matches('.paper-title') && e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+app.addEventListener('focusout', e => {
+  if (!e.target.matches('.paper-title')) return;
+  titleUndoPushed = false;
+  if (!e.target.textContent.trim()) e.target.textContent = '';
+});
+app.addEventListener('paste', e => {
+  if (!e.target.closest('.paper-title')) return;
+  e.preventDefault();
+  document.execCommand('insertText', false, (e.clipboardData.getData('text/plain') || '').replace(/\s+/g, ' '));
+});
+
+/* ================= Drag to rearrange chords ================= */
+// Mouse: drag after moving a few pixels. Touch: press and hold, then drag.
+let drag = null, suppressClick = false;
+function dragStart(el, x, y, touch) {
+  drag = { el, from: el.dataset.pos.split(',').map(Number), x, y, on: false, touch, target: null, ghost: null };
+  if (touch) drag.timer = setTimeout(() => dragBegin(drag ? drag.x : x, drag ? drag.y : y), 350);
+}
+function dragBegin(x, y) {
+  if (!drag || drag.on) return;
+  drag.on = true;
+  const r = drag.el.getBoundingClientRect();
+  const g = drag.el.cloneNode(true);
+  g.classList.add('drag-ghost'); g.classList.remove('active');
+  g.style.width = drag.el.offsetWidth + 'px';
+  g.style.transform = `scale(${r.width / drag.el.offsetWidth})`;
+  drag.dx = x - r.left; drag.dy = y - r.top;
+  document.body.appendChild(g); drag.ghost = g;
+  drag.el.classList.add('dragging');
+  if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
+  dragMove(x, y);
+}
+function dragMove(x, y) {
+  if (!drag) return;
+  if (!drag.on) {
+    if (Math.hypot(x - drag.x, y - drag.y) < 8) return;
+    if (drag.touch) { dragCancel(); return; } // finger moved before the hold: let the page scroll
+    dragBegin(x, y); return;
+  }
+  drag.ghost.style.left = (x - drag.dx) + 'px'; drag.ghost.style.top = (y - drag.dy) + 'px';
+  const over = document.elementFromPoint(x, y);
+  const t = over && over.closest('[data-pos]');
+  if (drag.target && drag.target !== t) drag.target.classList.remove('drop-target');
+  drag.target = t && t !== drag.el ? t : null;
+  if (drag.target) drag.target.classList.add('drop-target');
+  if (y < 60) window.scrollBy(0, -12); else if (y > window.innerHeight - 60) window.scrollBy(0, 12);
+}
+function dragCancel() {
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  if (drag.ghost) drag.ghost.remove();
+  drag.el.classList.remove('dragging');
+  if (drag.target) drag.target.classList.remove('drop-target');
+  drag = null;
+}
+function dragEnd() {
+  if (!drag) return;
+  const d = drag;
+  if (d.on) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 400); }
+  const to = d.on && d.target ? d.target.dataset.pos.split(',').map(Number) : null;
+  dragCancel();
+  if (to) moveChord(d.from, to);
+}
+// Dropping on a chord puts the dragged chord in that spot; the chords between shift over by one.
+function moveChord(from, to) {
+  const s = sheet();
+  const slots = [], cells = [];
+  s.pages.forEach((p, pi) => p.rows.forEach((r, ri) => r.cells.forEach((c, ci) => { slots.push([pi, ri, ci]); cells.push(c); })));
+  const key = a => a.join(',');
+  const i = slots.findIndex(a => key(a) === key(from)), j = slots.findIndex(a => key(a) === key(to));
+  if (i < 0 || j < 0 || i === j) return;
+  pushUndo();
+  const [c] = cells.splice(i, 1); cells.splice(j, 0, c);
+  slots.forEach(([pi, ri, ci], k) => { const row = s.pages[pi].rows[ri]; row.cells[ci] = cells[k]; fitStart(cells[k], row.n); });
+  view.editor = null;
+  touch(); renderSheet(); renderEditor();
+  toast('Chord moved. Undo puts it back.');
+}
+app.addEventListener('mousedown', e => {
+  if (e.button !== 0 || view.screen !== 'sheet') return;
+  const c = e.target.closest('[data-pos]'); if (c) dragStart(c, e.clientX, e.clientY, false);
+});
+window.addEventListener('mousemove', e => { if (drag && !drag.touch) { dragMove(e.clientX, e.clientY); if (drag && drag.on) e.preventDefault(); } });
+window.addEventListener('mouseup', () => { if (drag && !drag.touch) dragEnd(); });
+app.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1 || view.screen !== 'sheet') { dragCancel(); return; }
+  const c = e.target.closest('[data-pos]'); if (c) dragStart(c, e.touches[0].clientX, e.touches[0].clientY, true);
+}, { passive: true });
+window.addEventListener('touchmove', e => {
+  if (!drag || !drag.touch) return;
+  if (drag.on) e.preventDefault();
+  dragMove(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: false });
+window.addEventListener('touchend', e => { if (drag && drag.touch) { if (drag.on) e.preventDefault(); dragEnd(); } }, { passive: false });
+window.addEventListener('touchcancel', dragCancel);
+app.addEventListener('contextmenu', e => { if (drag && drag.on) e.preventDefault(); });
+
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);

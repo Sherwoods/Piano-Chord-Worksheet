@@ -456,8 +456,9 @@ function markShape(m, x, white, st, acc, pid) {
     const fill = st.type === 'dot' ? st.color : '#FFFFFF';
     const tc = lum(fill) < 0.35 ? '#FFFFFF' : '#1E2433';
     const label = notePc(m, acc);
-    const fs = label.length > 1 ? 8.5 : 10;
-    out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="#1E2433" stroke-width="1"/><text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="${fs}" fill="${tc}">${esc(label)}</text>`;
+    // Letter stays full size; a sharp/flat sign is drawn smaller beside it.
+    const acc2 = label.length > 1 ? `<tspan font-size="7">${esc(label.slice(1))}</tspan>` : '';
+    out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="#1E2433" stroke-width="1"/><text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="10" fill="${tc}">${esc(label[0])}${acc2}</text>`;
   }
   return `<g class="mark" pointer-events="none">${out}</g>`;
 }

@@ -201,6 +201,22 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .check:last-of-type { border-bottom: 0; }
 .check input { width: 20px; height: 20px; accent-color: var(--felt); }
 .hint { font-size: 14px; color: var(--muted); margin-top: var(--s3); }
+
+/* Chord builder */
+.builder { border: 1px solid var(--rule); background: var(--stock-raised); border-radius: var(--radius); padding: var(--s2) var(--s3) var(--s3); margin-bottom: var(--s4); }
+.builder > summary { cursor: pointer; font-family: var(--serif); font-weight: 600; padding: var(--s1) 0; }
+.builder > summary .sym { font-family: var(--sans); font-weight: 500; color: var(--felt-deep); margin-left: var(--s2); }
+.b-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: var(--s3); }
+.b-row > .lbl { flex-basis: 100%; }
+.chip { font-family: var(--sans); font-size: 15px; border: 1px solid var(--rule-strong); background: var(--stock); border-radius: var(--radius); padding: 6px 10px; min-height: 38px; min-width: 40px; }
+.chip:hover { background: var(--stock-raised); }
+.chip[aria-pressed="true"] { background: var(--felt-wash); color: var(--felt-deep); border-color: var(--felt); box-shadow: inset 0 -2px 0 var(--felt); }
+.chip[aria-disabled="true"], .seg button[aria-disabled="true"] { opacity: .45; }
+.b-preview { margin-top: var(--s3); padding: var(--s2) var(--s3); background: #fff; border: 1px solid var(--rule); border-radius: var(--radius); font-family: var(--sans); font-size: 15px; overflow-wrap: anywhere; }
+.b-preview strong { font-size: 18px; font-weight: 600; }
+.b-actions { display: flex; justify-content: flex-end; margin-top: var(--s2); }
+#parseHint { margin-top: var(--s2); }
+#parseHint:empty { display: none; }
 .warn { background: var(--warn-wash); color: var(--warn); border-left: 3px solid #C9A04A; border-radius: 0 var(--radius) var(--radius) 0; padding: var(--s2) var(--s3); font-size: 15px; margin: var(--s2) 0 var(--s3); }
 
 /* Hand color editor */
@@ -244,6 +260,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 <body>
 <div id="app"></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
+<script src="chords.js"></script>
 <script>
 (() => {
 'use strict';
@@ -327,10 +344,12 @@ function persist() {
   catch (e) { if (storageOk) toast('This device won’t save right now. Export a backup to keep your work.'); storageOk = false; }
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-function newCell(n) { return { name: '', acc: 'sharp', start: DEFAULT_START[n], marks: {}, fingers: {} }; }
+function newCell(n) { return { chord: null, label: '', acc: 'sharp', start: DEFAULT_START[n], marks: {}, fingers: {} }; }
 function newRow(n) { return { n, cells: Array.from({ length: n }, () => newCell(n)) }; }
 function newPage(ns) { return { rows: ns.map(newRow) }; }
-function cellHasContent(c) { return !!(c.name.trim() || Object.keys(c.marks).length || Object.keys(c.fingers || {}).length); }
+function cellHasContent(c) { return !!(c.chord || c.label.trim() || Object.keys(c.marks).length || Object.keys(c.fingers || {}).length); }
+// Printed chord name: the built chord's symbol, otherwise the free-text label.
+function cellTitle(c) { const s = sheet(); return c.chord ? ChordLib.render(c.chord, s ? s.notation : 'standard') : c.label; }
 
 function sanitizeStyle(s, fallback) {
   const out = Object.assign({}, fallback);
@@ -347,7 +366,10 @@ function sanitizeStyles(s) { s = s || {}; return { L: sanitizeStyle(s.L, DEFAULT
 function sanitizeCell(c, n) {
   const out = newCell(n);
   if (!c || typeof c !== 'object') return out;
-  if (typeof c.name === 'string') out.name = c.name.slice(0, 40);
+  // Older saves only have a free-text name; it becomes the label.
+  const label = typeof c.label === 'string' ? c.label : typeof c.name === 'string' ? c.name : '';
+  out.label = label.slice(0, 40);
+  out.chord = ChordLib.sanitize(c.chord);
   if (c.acc === 'flat') out.acc = 'flat';
   if (c.marks && typeof c.marks === 'object') {
     for (const k in c.marks) { const m = +k; if (m >= LOW && m <= HIGH && (c.marks[k] === 'L' || c.marks[k] === 'R')) out.marks[m] = c.marks[k]; }
@@ -373,6 +395,8 @@ function sanitizeSheet(s) {
     title: typeof s.title === 'string' ? s.title.slice(0, 80) : 'Chord Worksheet',
     updated: Number.isFinite(s.updated) ? s.updated : Date.now(),
     styles: sanitizeStyles(s.styles),
+    notation: s.notation === 'jazz' ? 'jazz' : 'standard',
+    spelling: s.spelling === 'strict' ? 'strict' : 'plain',
     print: { names: !(s.print && s.print.names === false), marks: !(s.print && s.print.marks === false), nameLine: !(s.print && s.print.nameLine === false) },
     pages: pages.length ? pages : [newPage([2, 2, 2, 2])]
   };
@@ -389,7 +413,7 @@ const STARTERS = [
 ];
 
 /* ================= View state ================= */
-const view = { screen: 'home', sheetId: null, layout: false, editor: null, hand: 'R', layoutRow: null, tap: 'mark', finger: 1 };
+const view = { screen: 'home', sheetId: null, layout: false, editor: null, hand: 'R', layoutRow: null, tap: 'mark', finger: 1, builderOpen: true };
 let undoStack = [];
 const sheet = () => data.sheets.find(s => s.id === view.sheetId);
 function pushUndo() {
@@ -459,7 +483,7 @@ function patternDef(id, st, bg) {
   if (st.pattern === 'dots') return `<pattern id="${id}" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="${bg}"/><circle cx="3" cy="3" r="1.7" fill="${c}"/></pattern>`;
   return `<pattern id="${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${bg}"/><rect width="3" height="6" fill="${c}"/></pattern>`;
 }
-function markShape(m, x, white, st, acc, pid) {
+function markShape(m, x, white, st, label, pid) {
   const w = white ? WW : BW, h = white ? WH : BH;
   const cx = x + w / 2, cy = h - (white ? 13 : 10), r = 8.5;
   let out = '';
@@ -470,12 +494,21 @@ function markShape(m, x, white, st, acc, pid) {
     // Named dot sits on top of the key fill; on a filled key it is white so the letter stays readable.
     const fill = st.type === 'dot' ? st.color : '#FFFFFF';
     const tc = lum(fill) < 0.35 ? '#FFFFFF' : '#1E2433';
-    const label = notePc(m, acc);
     // Letter stays full size; a sharp/flat sign is drawn smaller beside it.
     const acc2 = label.length > 1 ? `<tspan font-size="7">${esc(label.slice(1))}</tspan>` : '';
     out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="#1E2433" stroke-width="1"/><text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="10" fill="${tc}">${esc(label[0])}${acc2}</text>`;
   }
   return `<g class="mark" pointer-events="none">${out}</g>`;
+}
+// Pitch class → note name from the cell's chord spelling (chord tones and bass only).
+function chordKeyNames(cell) {
+  if (!cell.chord) return null;
+  const s = sheet();
+  const sp = ChordLib.spell(cell.chord, s ? s.spelling : 'plain');
+  const map = {};
+  sp.notes.forEach(n => { if (!(n.pc in map)) map[n.pc] = n.name; });
+  if (sp.bass && !(sp.bass.pc in map)) map[sp.bass.pc] = sp.bass.name;
+  return map;
 }
 function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } = {}) {
   const count = KEYS_PER_ROW[n];
@@ -484,6 +517,8 @@ function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } =
   const id = 'k' + (++svgSeq);
   const W = count * WW + 1, H = WH + 24;
   const fingers = cell.fingers || {};
+  const kn = chordKeyNames(cell);
+  const lab = m => (kn && kn[m % 12]) || notePc(m, cell.acc);
   let fk = '';
   const finger = (m, cx) => { if (fingers[m]) fk += `<text class="mark" x="${cx}" y="${WH + 19}" text-anchor="middle" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="11" fill="#1E2433" pointer-events="none">${fingers[m]}</text>`; };
   const bg = { L: patternDef(id + 'L', styles.L, '#FFFFFF') + patternDef(id + 'Lb', styles.L, '#8A8A8A'),
@@ -493,7 +528,7 @@ function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } =
     const x = 0.5 + i * WW;
     wk += `<rect ${interactive ? `data-midi="${m}" role="button" aria-label="${noteName(m, cell.acc)}"` : ''} x="${x}" y="0.5" width="${WW}" height="${WH}" fill="#FFFFFF" stroke="#1E2433" stroke-width="1"/>`;
     finger(m, x + WW / 2);
-    if (cell.marks[m]) wm += markShape(m, x, true, styles[cell.marks[m]], cell.acc, id + cell.marks[m]);
+    if (cell.marks[m]) wm += markShape(m, x, true, styles[cell.marks[m]], lab(m), id + cell.marks[m]);
     if (m === MIDDLE_C) wk += `<path d="M${x + WW / 2 - 4} ${WH + 8.5} L${x + WW / 2} ${WH + 3} L${x + WW / 2 + 4} ${WH + 8.5} Z" fill="#7D1D2C"/>`;
   });
   whites.forEach((m, i) => {
@@ -503,7 +538,7 @@ function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } =
     const x = 0.5 + (i + 1) * WW - BW / 2;
     bk += `<rect ${interactive ? `data-midi="${b}" role="button" aria-label="${noteName(b, cell.acc)}"` : ''} x="${x}" y="0.5" width="${BW}" height="${BH}" fill="#8A8A8A" stroke="#1E2433" stroke-width="1" rx="1"/>`;
     finger(b, x + BW / 2);
-    if (cell.marks[b]) bm += markShape(b, x, false, styles[cell.marks[b]], cell.acc, id + cell.marks[b] + 'b');
+    if (cell.marks[b]) bm += markShape(b, x, false, styles[cell.marks[b]], lab(b), id + cell.marks[b] + 'b');
   });
   const size = pxPerKey ? `width="${count * pxPerKey}" height="${Math.round(H * pxPerKey / WW)}"` : '';
   return `<svg viewBox="0 0 ${W} ${H}" ${size} preserveAspectRatio="xMinYMid meet" xmlns="http://www.w3.org/2000/svg" aria-hidden="${interactive ? 'false' : 'true'}"><defs>${bg.L}${bg.R}</defs>${wk}${wm}${bk}${bm}${fk}</svg>`;
@@ -557,8 +592,8 @@ function pageScale() {
 function cellHTML(cell, n, styles, pi, ri, ci, editable) {
   const out = outOfView(cell, n);
   const active = view.editor && view.editor.pi === pi && view.editor.ri === ri && view.editor.ci === ci;
-  return `<div class="cell ${active ? 'active' : ''}" data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cell.name || 'blank')}"` : ''}>
-    <span class="cell-name"><span class="cell-name-text">${esc(cell.name)}</span></span>
+  return `<div class="cell ${active ? 'active' : ''}" data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cellTitle(cell) || 'blank')}"` : ''}>
+    <span class="cell-name"><span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
     ${keyboardSVG(cell, n, styles)}
     ${out ? `<span class="flag">${out} note${out > 1 ? 's' : ''} out of view</span>` : ''}
   </div>`;
@@ -576,6 +611,7 @@ function renderSheet() {
     <button class="btn" data-act="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button>
     <button class="btn ${view.layout ? 'on' : ''}" data-act="layout" aria-pressed="${view.layout}">${view.layout ? 'Done with layout' : 'Layout'}</button>
     <button class="btn" data-act="styles">Hands</button>
+    <button class="btn" data-act="sheet-settings">Symbols</button>
     <button class="btn primary" data-act="print">Print</button>
   </header>
   <main>
@@ -645,6 +681,7 @@ function renderEditor(keepScroll) {
     editorEl.addEventListener('click', onEditorClick);
     editorEl.addEventListener('input', onEditorInput);
     editorEl.addEventListener('keydown', e => { if (e.key === 'Escape') closeEditor(); });
+    editorEl.addEventListener('toggle', e => { if (e.target.matches('.builder')) view.builderOpen = e.target.open; }, true);
   }
   const idx = orderIndex(view.editor), total = cellOrder().length;
   const out = outOfView(cell, n);
@@ -657,14 +694,16 @@ function renderEditor(keepScroll) {
       <button class="btn" data-e="next" ${idx < total - 1 ? '' : 'disabled'} aria-label="Next chord">›</button>
       <button class="btn primary" data-e="done">Done</button>
     </div>
-    <div class="field"><label for="chordName">Chord name</label>
-      <input id="chordName" class="text-in" value="${esc(cell.name)}" maxlength="40" placeholder="Leave blank for students to fill in" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    ${builderHTML(cell)}
+    <div class="field"><label for="chordName">Custom label</label>
+      <input id="chordName" class="text-in" value="${esc(cell.chord ? '' : cell.label)}" maxlength="40" placeholder="${cell.chord ? 'Typing here replaces the built chord' : 'Blank or ? for students to fill in'}" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div id="parseHint">${cell.chord ? '' : parseHintHTML(cell.label)}</div></div>
     <div class="controls">
       <div><span class="lbl">Marking</span><div class="seg" role="group" aria-label="Hand">
         <button data-e="hand" data-v="L" aria-pressed="${view.hand === 'L'}"><span class="swatch-dot" style="background:${st.L.color}"></span>Left hand</button>
         <button data-e="hand" data-v="R" aria-pressed="${view.hand === 'R'}"><span class="swatch-dot" style="background:${st.R.color}"></span>Right hand</button>
       </div></div>
-      <div><span class="lbl">Note names</span><div class="seg" role="group" aria-label="Sharps or flats">
+      <div><span class="lbl">${cell.chord ? 'Other keys' : 'Note names'}</span><div class="seg" role="group" aria-label="Sharps or flats">
         <button data-e="acc" data-v="sharp" aria-pressed="${cell.acc === 'sharp'}">♯</button>
         <button data-e="acc" data-v="flat" aria-pressed="${cell.acc === 'flat'}">♭</button>
       </div></div>
@@ -686,7 +725,7 @@ function renderEditor(keepScroll) {
     ${out ? `<div class="warn">${out} marked note${out > 1 ? 's are' : ' is'} outside this keyboard. Shift the range or clear the chord.${KEYS_PER_ROW[n] < 29 ? ' Fewer chords in this row gives a wider keyboard.' : ''}</div>` : ''}
     <div class="editor-actions">
       <button class="btn" data-e="clear-notes" ${Object.keys(cell.marks).length || Object.keys(cell.fingers || {}).length ? '' : 'disabled'}>Clear notes</button>
-      <button class="btn" data-e="clear-all" ${cellHasContent(cell) ? '' : 'disabled'}>Clear chord</button>
+      <button class="btn" data-e="clear-all" ${cellHasContent(cell) ? '' : 'disabled'}>Clear all</button>
       <span class="grow"></span>
       <button class="btn" data-e="copy-next" ${idx < total - 1 && cellHasContent(cell) ? '' : 'disabled'}>Copy to next</button>
     </div>
@@ -704,15 +743,86 @@ function centerScroll(sc, cell, n) {
   const px = (target - cell.start + 0.5) * 42 + 10;
   sc.scrollLeft = Math.max(0, px - sc.clientWidth / 2);
 }
-function openEditor(pi, ri, ci) { view.editor = { pi, ri, ci }; renderSheet(); renderEditor(); }
+// The builder starts open when the cell has a built chord or nothing at all.
+function setBuilderOpen() { const { cell } = cellAt(view.editor); view.builderOpen = !!cell.chord || !cell.label.trim(); }
+function openEditor(pi, ri, ci) { view.editor = { pi, ri, ci }; setBuilderOpen(); renderSheet(); renderEditor(); }
 function closeEditor() { view.editor = null; renderSheet(); renderEditor(); }
 let nameUndoPushed = false;
 function onEditorInput(e) {
   if (e.target.id !== 'chordName') return;
-  if (!nameUndoPushed) { pushUndo(); nameUndoPushed = true; }
   const { cell } = cellAt(view.editor);
-  cell.name = e.target.value;
+  const typed = e.target.value;
+  if (cell.chord) {
+    if (!typed) return;
+    e.target.value = '';
+    confirmDlg('Replace the chord with a label?', `“${cellTitle(cell)}” will be cleared from the builder. You can undo this.`, 'Replace').then(ok => {
+      if (!ok || !view.editor) return;
+      pushUndo(); nameUndoPushed = true;
+      cell.chord = null; cell.label = typed.slice(0, 40);
+      touch(); refreshActiveCell(); renderEditor(true);
+      const i = editorEl && editorEl.querySelector('#chordName');
+      if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    });
+    return;
+  }
+  if (!nameUndoPushed) { pushUndo(); nameUndoPushed = true; }
+  cell.label = typed;
   touch(); refreshActiveCell();
+  const h = editorEl.querySelector('#parseHint'); if (h) h.innerHTML = parseHintHTML(typed);
+}
+function parseHintHTML(text) {
+  const p = ChordLib.parse(text || '');
+  if (!p) return '';
+  const s = sheet();
+  return `<button class="btn on" data-e="use-parsed">Use as chord: ${esc(ChordLib.render(p, s ? s.notation : 'standard'))} ✓</button>`;
+}
+
+/* ---------- Chord builder ---------- */
+const B_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const B_ACC = [[0, '♮'], [1, '♯'], [-1, '♭']];
+function chip(cell, group, value, text, cls = 'chip') {
+  const c = cell.chord;
+  const on = ChordLib.isOn(c, group, value);
+  const why = on ? null : ChordLib.optionReason(c, group, value);
+  return `<button class="${cls}" data-b="${group}" data-v="${value === null ? '' : value}" aria-pressed="${on}"${why ? ` aria-disabled="true" title="${esc(why)}"` : ''}>${text}</button>`;
+}
+function builderHTML(cell) {
+  const c = cell.chord, s = sheet();
+  const row = (label, body) => `<div class="b-row"><span class="lbl">${label}</span>${body}</div>`;
+  const chips = (group, items) => items.map(([v, t]) => chip(cell, group, v, t)).join('');
+  const seg = (group, label) => `<div class="seg" role="group" aria-label="${label}">${B_ACC.map(([v, t]) => chip(cell, group, v, t, '')).join('')}</div>`;
+  let preview = 'No chord yet. Tap a root note to start.';
+  if (c) {
+    const sp = ChordLib.spell(c, s.spelling);
+    preview = `<strong>${esc(ChordLib.render(c, s.notation))}</strong> · ${sp.notes.map(n => esc(n.name)).join(' ')}${sp.bass ? ` · bass ${esc(sp.bass.name)}` : ''}`;
+  }
+  return `<details class="builder" ${view.builderOpen ? 'open' : ''}>
+    <summary>Chord builder${c ? `<span class="sym">${esc(ChordLib.render(c, s.notation))}</span>` : ''}</summary>
+    ${row('Root', chips('root', B_LETTERS.map(l => [l, l])) + seg('rootAcc', 'Root accidental'))}
+    ${row('Quality', chips('quality', [['maj', 'maj'], ['min', 'min'], ['dim', 'dim'], ['aug', 'aug'], ['sus2', 'sus2'], ['sus4', 'sus4'], ['5', '5']]))}
+    ${row('Seventh', chips('seventh', [[null, 'none'], ['6', '6'], ['7', '7'], ['maj7', 'maj7'], ['dim7', 'dim7']]))}
+    ${row('Extension', chips('ext', [[9, '9'], [11, '11'], [13, '13']]))}
+    ${row('Alterations', chips('alt', [['b5', '♭5'], ['s5', '♯5'], ['b9', '♭9'], ['s9', '♯9'], ['s11', '♯11'], ['b13', '♭13'], ['alt7', 'alt']]))}
+    ${row('Add and omit', chips('add', [['add9', 'add9'], ['add11', 'add11'], ['sixNine', '6/9']]) + chips('omit', [['no3', 'no 3rd'], ['no5', 'no 5th']]))}
+    ${row('Bass (slash chord)', chips('bass', [[null, 'none'], ...B_LETTERS.map(l => [l, l])]) + seg('bassAcc', 'Bass accidental'))}
+    <div class="b-preview" aria-live="polite">${preview}</div>
+    <div class="b-actions"><button class="btn" data-e="clear-chord" ${c ? '' : 'disabled'}>Clear chord</button></div>
+  </details>`;
+}
+function builderValue(group, v) {
+  if (group === 'ext' || group === 'rootAcc' || group === 'bassAcc') return +v;
+  if ((group === 'seventh' || group === 'bass') && v === '') return null;
+  return v;
+}
+function onBuilderTap(b) {
+  const { cell } = cellAt(view.editor);
+  const g = b.dataset.b, v = builderValue(g, b.dataset.v);
+  const why = ChordLib.optionReason(cell.chord, g, v);
+  if (why) { toast(why); return; }
+  pushUndo(); nameUndoPushed = false;
+  if (cell.chord) cell.chord = ChordLib.apply(cell.chord, g, v);
+  else { cell.chord = ChordLib.emptyChord({ letter: v, acc: 0 }); cell.label = ''; }
+  touch(); refreshActiveCell(); renderEditor(true);
 }
 function refreshActiveCell() {
   const e = view.editor; if (!e) return;
@@ -739,12 +849,14 @@ async function onEditorClick(ev) {
     else cell.marks[m] = view.hand;
     touch(); refreshActiveCell(); renderEditor(true); return;
   }
+  const bb = ev.target.closest('[data-b]');
+  if (bb) { onBuilderTap(bb); return; }
   const b = ev.target.closest('[data-e]'); if (!b) return;
   const act = b.dataset.e;
   const order = cellOrder(), idx = orderIndex(view.editor);
   nameUndoPushed = false;
   if (act === 'done') closeEditor();
-  else if (act === 'prev' || act === 'next') { view.editor = order[idx + (act === 'next' ? 1 : -1)]; renderSheet(); renderEditor(); scrollCellIntoView(); }
+  else if (act === 'prev' || act === 'next') { view.editor = order[idx + (act === 'next' ? 1 : -1)]; setBuilderOpen(); renderSheet(); renderEditor(); scrollCellIntoView(); }
   else if (act === 'hand') { view.hand = b.dataset.v; view.tap = 'mark'; renderEditor(true); }
   else if (act === 'tap') { view.tap = b.dataset.v; renderEditor(true); }
   else if (act === 'finger') { view.finger = +b.dataset.v; view.tap = 'finger'; renderEditor(true); }
@@ -754,20 +866,26 @@ async function onEditorClick(ev) {
     const ns = clamp(cell.start + +b.dataset.v, 0, maxStart(count));
     if (ns !== cell.start) { pushUndo(); cell.start = ns; touch(); refreshActiveCell(); renderEditor(true); }
   }
+  else if (act === 'clear-chord') { if (!cell.chord) return; pushUndo(); cell.chord = null; touch(); refreshActiveCell(); renderEditor(true); }
+  else if (act === 'use-parsed') {
+    const p = ChordLib.parse(cell.label); if (!p) return;
+    pushUndo(); cell.chord = p; cell.label = ''; view.builderOpen = true;
+    touch(); refreshActiveCell(); renderEditor(true);
+  }
   else if (act === 'clear-notes') { pushUndo(); cell.marks = {}; cell.fingers = {}; touch(); refreshActiveCell(); renderEditor(true); }
   else if (act === 'clear-all') { pushUndo(); Object.assign(cell, newCell(row.n)); touch(); refreshActiveCell(); renderEditor(); }
   else if (act === 'copy-next') {
     const nx = order[idx + 1];
     const target = cellAt(nx);
     if (cellHasContent(target.cell)) {
-      const ok = await confirmDlg('Replace the next chord?', `The next chord${target.cell.name ? ' (' + target.cell.name + ')' : ''} already has content.`, 'Replace');
+      const ok = await confirmDlg('Replace the next chord?', `The next chord${cellTitle(target.cell) ? ' (' + cellTitle(target.cell) + ')' : ''} already has content.`, 'Replace');
       if (!ok) return;
     }
     pushUndo();
     const copy = JSON.parse(JSON.stringify(cell));
     target.row.cells[nx.ci] = copy;
     if (target.row.n !== row.n) fitStart(copy, target.row.n);
-    touch(); view.editor = nx; renderSheet(); renderEditor(); scrollCellIntoView();
+    touch(); view.editor = nx; setBuilderOpen(); renderSheet(); renderEditor(); scrollCellIntoView();
     toast('Copied. Now adjust it.');
   }
 }
@@ -783,7 +901,7 @@ async function setRowN(pi, ri, n) {
   if (row.n === n) return;
   const dropped = row.cells.slice(n).filter(cellHasContent);
   if (dropped.length) {
-    const names = dropped.map(c => c.name || 'unnamed chord').join(', ');
+    const names = dropped.map(c => cellTitle(c) || 'unnamed chord').join(', ');
     const ok = await confirmDlg(`Remove ${dropped.length} chord${dropped.length > 1 ? 's' : ''}?`, `This row will only fit ${n}. Removing: ${names}. You can undo this.`);
     if (!ok) return;
   }
@@ -841,7 +959,7 @@ function openStyles(target) {
   ov.className = 'overlay enter';
   document.body.appendChild(ov);
   setTimeout(() => ov.classList.remove('enter'), 250);
-  const demo = { name: '', acc: 'sharp', start: WIDX[48], marks: { 48: 'L', 55: 'L', 64: 'R', 67: 'R', 70: 'R', 72: 'R' } };
+  const demo = { chord: null, label: '', acc: 'sharp', start: WIDX[48], marks: { 48: 'L', 55: 'L', 64: 'R', 67: 'R', 70: 'R', 72: 'R' } };
   function draw() {
     const risk = grayRisk(work);
     ov.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-label="Hand colors">
@@ -887,6 +1005,37 @@ function openStyles(target) {
   });
   ov.addEventListener('change', e => {
     if (e.target.dataset.s === 'custom') { work[e.target.dataset.h].color = e.target.value; draw(); }
+  });
+}
+
+/* ================= Sheet settings ================= */
+function openSheetSettings() {
+  const s = sheet();
+  const ov = document.createElement('div');
+  ov.className = 'overlay middle enter';
+  const opt = (k, v, t) => `<button data-ss="${k}" data-v="${v}" aria-pressed="${s[k] === v}">${t}</button>`;
+  function draw() {
+    ov.innerHTML = `<div class="panel center" role="dialog" aria-modal="true" aria-label="Chord symbols">
+      <h2>Chord symbols</h2>
+      <div class="field"><span class="lbl">Notation</span>
+        <div><div class="seg" role="group" aria-label="Notation">${opt('notation', 'standard', 'Standard')}${opt('notation', 'jazz', 'Jazz')}</div></div>
+        <p class="hint" style="margin:0">Standard: Cmaj7, Cm7, Cm7♭5, Cdim. Jazz: C∆7, C–7, Cø7, C°.</p></div>
+      <div class="field"><span class="lbl">Spelling</span>
+        <div><div class="seg" role="group" aria-label="Spelling">${opt('spelling', 'plain', 'Plain')}${opt('spelling', 'strict', 'Strict')}</div></div>
+        <p class="hint" style="margin:0">Plain avoids double sharps and flats: E♭dim7 is E♭ G♭ A C. Strict: E♭ G♭ B𝄫 D𝄫.</p></div>
+      <div class="dialog-buttons"><button class="btn primary" data-ss="done">Done</button></div>
+    </div>`;
+  }
+  draw();
+  document.body.appendChild(ov);
+  setTimeout(() => ov.classList.remove('enter'), 250);
+  ov.addEventListener('click', e => {
+    if (e.target === ov) { ov.remove(); return; }
+    const b = e.target.closest('[data-ss]'); if (!b) return;
+    if (b.dataset.ss === 'done') { ov.remove(); return; }
+    const k = b.dataset.ss, v = b.dataset.v;
+    if (s[k] === v) return;
+    pushUndo(); s[k] = v; touch(); renderSheet(); draw();
   });
 }
 
@@ -1034,6 +1183,7 @@ app.addEventListener('click', async e => {
     case 'undo': undo(); break;
     case 'layout': view.layout = !view.layout; view.editor = null; render(); break;
     case 'styles': openStyles('sheet'); break;
+    case 'sheet-settings': openSheetSettings(); break;
     case 'styles-default': openStyles('default'); break;
     case 'print': openPrint(); break;
     case 'row-n': setRowN(pi, ri, +b.dataset.n); break;

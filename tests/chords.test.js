@@ -142,5 +142,28 @@ check('♭5 on m7 becomes half-diminished', L.render(L.apply(L.parse('Cm7'), 'al
 check('sanitize drops junk', L.sanitize({ root: { letter: 'H' } }) === null && L.sanitize(null) === null);
 check('sanitize keeps a chord', same(L.sanitize(JSON.parse(JSON.stringify(c7))), c7));
 
+/* ---------- Close voicing used to mark the keys ---------- */
+const NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const midiName = m => NAMES[m % 12] + (Math.floor(m / 12) - 1);
+[['G7', 'G3 B3 D4 F4'], ['C', 'C4 E4 G4'], ['Cmaj7', 'C4 E4 G4 B4'], ['F♯m', 'F♯4 A4 C♯5'], ['A♭7', 'G♯3 C4 D♯4 F♯4'],
+ ['C9', 'C4 D4 E4 G4 A♯4'], ['G7/B', 'L:B2 G3 B3 D4 F4'], ['C/E', 'L:E3 C4 E4 G4']].forEach(([sym, want]) => {
+  const v = L.closeVoicing(L.parse(sym));
+  const got = v.map(x => (x.hand === 'L' ? 'L:' : '') + midiName(x.midi)).join(' ');
+  check(`close voicing ${sym}`, got === want, `got ${got}`);
+});
+let voiced = 0;
+pool.forEach(c => {
+  const v = L.closeVoicing(c), r = v.filter(x => x.hand === 'R').map(x => x.midi);
+  const want = [...new Set(L.tones(c).map(t => t.semis % 12))].map(s => (L.pcOf(c.root) + s) % 12).sort((a, b) => a - b);
+  const got = [...new Set(r.map(m => m % 12))].sort((a, b) => a - b);
+  const sym = L.render(c);
+  check(`voicing has exactly the chord tones: ${sym}`, same(got, want) && got.length === r.length, `got ${got} want ${want}`);
+  check(`voicing is root position within an octave: ${sym}`, r[0] % 12 === L.pcOf(c.root) && r[r.length - 1] - r[0] < 12);
+  const b = v.find(x => x.hand === 'L');
+  check(`slash bass below the chord: ${sym}`, c.bass ? b && b.midi % 12 === L.pcOf(c.bass) && b.midi < r[0] : !b);
+  voiced++;
+});
+check('voicing checked on 100+ chords', voiced >= 100, `only ${voiced}`);
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

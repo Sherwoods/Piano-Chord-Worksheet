@@ -336,9 +336,27 @@ function isOn(chord, group, value) {
   return false;
 }
 
+// Simple close voicing: right hand plays every chord tone in root position within one octave,
+// with the root between G3 and F♯4 so the chord sits around middle C. A slash bass goes in the
+// left hand, in the octave below the root.
+function closeVoicing(chord) {
+  const c = normalize(chord);
+  if (!c) return [];
+  const rpc = pcOf(c.root);
+  const rootMidi = 55 + mod(rpc - 7, 12);                   // G3 (55) .. F♯4 (66)
+  const pcs = [...new Set(tones(c).map(t => mod(t.semis, 12)))].sort((a, b) => a - b);
+  const out = pcs.map(p => ({ midi: rootMidi + p, hand: 'R' }));
+  if (c.bass) {
+    let b = rootMidi - 12 + mod(pcOf(c.bass) - rpc, 12);
+    if (b >= rootMidi) b -= 12;
+    out.unshift({ midi: b, hand: 'L' });
+  }
+  return out;
+}
+
 const ChordLib = {
   LETTERS, NAT, QUALITIES, SEVENTHS, EXTS, ALT_KEYS, ALT_TEXT, ADD_KEYS, OMIT_KEYS,
-  emptyChord, normalize, validate, tones, spell, render, parse, sanitize, apply, optionReason, isOn,
+  emptyChord, normalize, validate, tones, spell, render, parse, sanitize, apply, optionReason, isOn, closeVoicing,
   noteName, pcOf
 };
 root.ChordLib = ChordLib;

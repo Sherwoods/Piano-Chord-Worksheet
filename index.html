@@ -260,7 +260,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 <body>
 <div id="app"></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
-<script src="chords.js"></script>
+<script src="chords.js?v=8"></script>
 <script>
 (() => {
 'use strict';
@@ -814,15 +814,22 @@ function builderValue(group, v) {
   if ((group === 'seventh' || group === 'bass') && v === '') return null;
   return v;
 }
+// The keyboard follows the builder: every chord change re-marks a close voicing (undoable).
+function markChord(cell, n) {
+  cell.marks = {}; cell.fingers = {};
+  if (cell.chord) ChordLib.closeVoicing(cell.chord).forEach(v => { if (v.midi >= LOW && v.midi <= HIGH) cell.marks[v.midi] = v.hand; });
+  fitStart(cell, n);
+}
 function onBuilderTap(b) {
-  const { cell } = cellAt(view.editor);
+  const { row, cell } = cellAt(view.editor);
   const g = b.dataset.b, v = builderValue(g, b.dataset.v);
   const why = ChordLib.optionReason(cell.chord, g, v);
   if (why) { toast(why); return; }
   pushUndo(); nameUndoPushed = false;
   if (cell.chord) cell.chord = ChordLib.apply(cell.chord, g, v);
   else { cell.chord = ChordLib.emptyChord({ letter: v, acc: 0 }); cell.label = ''; }
-  touch(); refreshActiveCell(); renderEditor(true);
+  markChord(cell, row.n);
+  touch(); refreshActiveCell(); renderEditor();
 }
 function refreshActiveCell() {
   const e = view.editor; if (!e) return;
@@ -866,11 +873,12 @@ async function onEditorClick(ev) {
     const ns = clamp(cell.start + +b.dataset.v, 0, maxStart(count));
     if (ns !== cell.start) { pushUndo(); cell.start = ns; touch(); refreshActiveCell(); renderEditor(true); }
   }
-  else if (act === 'clear-chord') { if (!cell.chord) return; pushUndo(); cell.chord = null; touch(); refreshActiveCell(); renderEditor(true); }
+  else if (act === 'clear-chord') { if (!cell.chord) return; pushUndo(); cell.chord = null; markChord(cell, row.n); touch(); refreshActiveCell(); renderEditor(); }
   else if (act === 'use-parsed') {
     const p = ChordLib.parse(cell.label); if (!p) return;
     pushUndo(); cell.chord = p; cell.label = ''; view.builderOpen = true;
-    touch(); refreshActiveCell(); renderEditor(true);
+    markChord(cell, row.n);
+    touch(); refreshActiveCell(); renderEditor();
   }
   else if (act === 'clear-notes') { pushUndo(); cell.marks = {}; cell.fingers = {}; touch(); refreshActiveCell(); renderEditor(true); }
   else if (act === 'clear-all') { pushUndo(); Object.assign(cell, newCell(row.n)); touch(); refreshActiveCell(); renderEditor(); }

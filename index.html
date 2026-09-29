@@ -146,7 +146,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .name-line { display: flex; gap: 18px; font-size: 13px; color: #1E2433; }
 .name-line span { display: inline-block; border-bottom: 1px solid #1E2433; min-width: 150px; padding-top: 14px; }
 .name-line span.date { min-width: 90px; }
-.rows { flex: 1; display: grid; gap: 10px; }
+.rows { flex: 1; min-height: 0; display: grid; gap: 10px; }
 .row { display: grid; column-gap: 29px; align-items: center; position: relative; }
 .cell { position: relative; min-width: 0; border-radius: 6px; }
 .cell-name { display: block; border-bottom: 1px solid #7A8190; max-width: 240px; height: 30px; font-size: 19px; line-height: 30px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
@@ -200,6 +200,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .check { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
 .check:last-of-type { border-bottom: 0; }
 .check input { width: 20px; height: 20px; accent-color: var(--felt); }
+.hint { font-size: 14px; color: var(--muted); margin-top: var(--s3); }
 .warn { background: var(--warn-wash); color: var(--warn); border-left: 3px solid #C9A04A; border-radius: 0 var(--radius) var(--radius) 0; padding: var(--s2) var(--s3); font-size: 15px; margin: var(--s2) 0 var(--s3); }
 
 /* Hand color editor */
@@ -220,16 +221,18 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 
 /* ---------- Print ---------- */
 .print-only { display: none; }
-@page { size: letter; margin: 0.5in; }
+/* Print geometry is fixed: the page has no browser margin and the sheet carries its own 0.5in margin,
+   so the printout matches the on-screen page no matter which browser or margin setting is used. */
+@page { size: 8.5in 11in; margin: 0; }
 @media print {
-  html, body { background: #fff !important; }
+  html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   :root { padding: 0 !important; }
   .bar, .page-head, .after-pages, .overlay, .toast, .flag, .layout-row-controls, .add-row, .row-tools, .no-print, .home { display: none !important; }
   main { padding: 0 !important; max-width: none !important; margin: 0 !important; }
   .pages { display: block !important; }
   .page-wrap { max-width: none !important; width: auto !important; }
   .paper-frame { height: auto !important; overflow: visible !important; }
-  .paper { transform: none !important; box-shadow: none !important; width: 7.5in !important; height: 9.85in !important; padding: 0 !important; break-after: page; page-break-after: always; }
+  .paper { transform: none !important; box-shadow: none !important; width: 816px !important; height: 1054px !important; padding: 48px !important; margin: 0 !important; overflow: hidden !important; break-after: page; page-break-after: always; break-inside: avoid; }
   .page-wrap:last-child .paper { break-after: auto; page-break-after: auto; }
   .cell, .cell.active, .paper.editable .cell:hover { outline: none !important; }
   body.hide-names .cell-name-text { visibility: hidden; }
@@ -898,6 +901,7 @@ async function openPrint() {
     <label class="check"><input type="checkbox" id="pNames" ${s.print.names ? 'checked' : ''}> Chord names</label>
     <label class="check"><input type="checkbox" id="pMarks" ${s.print.marks ? 'checked' : ''}> Marked notes</label>
     <label class="check"><input type="checkbox" id="pLine" ${s.print.nameLine ? 'checked' : ''}> Student name and date lines</label>
+    <p class="hint">For the same result every time, set Scale to 100% (not “Fit to page”) and turn off Headers and footers in the print window.</p>
     <div class="dialog-buttons"><button class="btn" data-p="cancel">Cancel</button><button class="btn primary" data-p="go">Print</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -912,10 +916,11 @@ async function openPrint() {
     document.body.classList.toggle('hide-names', !s.print.names);
     document.body.classList.toggle('hide-marks', !s.print.marks);
     document.body.classList.toggle('no-nameline', !s.print.nameLine);
-    setTimeout(() => {
+    const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    Promise.race([fontsReady, new Promise(r => setTimeout(r, 1500))]).then(() => setTimeout(() => {
       try { window.print(); }
       catch (err) { toast('Printing isn’t available here. Open the app in Safari to print.'); }
-    }, 60);
+    }, 60));
   });
 }
 window.addEventListener('afterprint', () => {

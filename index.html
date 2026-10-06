@@ -151,8 +151,9 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .cell { position: relative; min-width: 0; border-radius: 6px; }
 .cell-name { display: block; border-bottom: 1px solid #7A8190; max-width: 240px; height: 30px; font-size: 19px; line-height: 30px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
 .cell svg.kbd { display: block; width: 100%; height: auto; max-height: var(--kh, 999px); }
-/* The grand staff sits under the keyboard; the keyboard gives up the staff's height (staff 126px + 4px gap). */
-.cell svg.staff { display: block; width: 100%; height: auto; margin-top: 4px; }
+/* The grand staff sits between the chord name and the keyboard; the keyboard gives up the staff's height
+   (staff 126px + 4px gap). */
+.cell svg.staff { display: block; width: 100%; height: auto; margin-bottom: 4px; }
 .cell.with-staff svg.kbd { max-height: calc(var(--kh, 999px) - 130px); }
 .paper.editable .cell { cursor: pointer; }
 .paper.editable .cell:hover { outline: 2px solid #EBD9D6; outline-offset: 5px; }
@@ -658,8 +659,8 @@ function cellHTML(cell, n, styles, pi, ri, ci, editable) {
   const active = view.editor && view.editor.pi === pi && view.editor.ri === ri && view.editor.ci === ci;
   return `<div class="cell ${active ? 'active' : ''} ${cell.staff ? 'with-staff' : ''}" data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cellTitle(cell) || 'blank')}"` : ''}>
     <span class="cell-name"><span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
-    ${keyboardSVG(cell, n, styles)}
     ${cell.staff ? staffSVG(cell, n) : ''}
+    ${keyboardSVG(cell, n, styles)}
     ${out ? `<span class="flag">${out} note${out > 1 ? 's' : ''} out of view</span>` : ''}
   </div>`;
 }
@@ -769,7 +770,7 @@ function renderEditor(keepScroll) {
       <input id="chordName" class="text-in" value="${esc(built ? '' : cell.label)}" maxlength="40" placeholder="${built ? `Typing here replaces the built ${cell.scale ? 'scale' : 'chord'}` : 'Blank or ? for students to fill in'}" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div id="parseHint">${built ? '' : parseHintHTML(cell.label)}</div></div>
     <div class="b-row"><span class="lbl">Grand staff</span>
-      <button class="chip" data-e="staff" aria-pressed="${cell.staff}">${cell.staff ? 'Shown under the keyboard' : 'Show under the keyboard'}</button></div>
+      <button class="chip" data-e="staff" aria-pressed="${cell.staff}">${cell.staff ? 'Shown above the keyboard' : 'Show above the keyboard'}</button></div>
     ${cell.staff ? `<div class="staff-preview">${staffSVG(cell, n)}</div>
       ${s.pages[view.editor.pi].rows.length > 3 ? '<p class="hint" style="margin:4px 0 0">Keyboards on this page shrink to make room for the staff. Pages with 3 rows or fewer keep them full size.</p>' : ''}` : ''}
     <div class="shift-row"><span class="lbl">Transpose this ${cell.scale ? 'scale' : 'chord'}</span>

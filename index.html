@@ -250,6 +250,11 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
   .paper-frame { height: auto !important; overflow: visible !important; }
   .paper { transform: none !important; box-shadow: none !important; width: 816px !important; height: 1054px !important; padding: 48px !important; margin: 0 !important; overflow: hidden !important; break-after: page; page-break-after: always; break-inside: avoid; }
   .page-wrap:last-child .paper { break-after: auto; page-break-after: auto; }
+  /* Safari splits a page box across printed pages by pushing anything that can't be split (the
+     keyboard SVGs) below the break it expects. With a fixed height and clipped overflow, that moved the
+     last row's keyboard far below its name and cut it off. A box that scrolls vertically is never split,
+     so nothing inside the sheet gets pushed. Nothing overflows, so no scrollbar shows. */
+  .paper { overflow-x: hidden !important; overflow-y: auto !important; }
   .cell, .cell.active, .paper.editable .cell:hover { outline: none !important; }
   body.hide-names .cell-name-text { visibility: hidden; }
   body.hide-marks .mark { display: none; }

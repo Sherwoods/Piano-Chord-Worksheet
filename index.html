@@ -1434,15 +1434,17 @@ window.addEventListener('touchend', e => { if (drag && drag.touch) { if (drag.on
 window.addEventListener('touchcancel', dragCancel);
 app.addEventListener('contextmenu', e => { if (drag && drag.on) e.preventDefault(); });
 
-// The page scale depends only on width. Height changes come from the on-screen keyboard opening
-// while the title is being typed, and re-rendering then would replace the title and drop focus.
-let resizeTimer, lastWidth = window.innerWidth;
+// The page scale depends only on the layout width. Height changes come from the on-screen keyboard,
+// and iOS reports zoom (it zooms in on small text being edited) as a window size change too.
+// Re-rendering then would replace the title being typed and drop focus.
+const layoutWidth = () => document.documentElement.clientWidth;
+let resizeTimer, lastWidth = layoutWidth();
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    if (window.innerWidth === lastWidth) return;
+    if (layoutWidth() === lastWidth) return;
     if (document.activeElement && document.activeElement.matches('.paper-title')) return;
-    lastWidth = window.innerWidth;
+    lastWidth = layoutWidth();
     if (view.screen === 'sheet') renderSheet();
   }, 120);
 });

@@ -354,9 +354,74 @@ function closeVoicing(chord) {
   return out;
 }
 
+/* ---------- Transposition ----------
+   A note moves by a number of semitones and a number of letter steps, like an interval, so a
+   progression keeps its spelling relationships (E♭ A♭ B♭7 up a major 2nd is F B♭ C7). */
+function transposeNote(n, semis, steps) {
+  const li = mod(letterIndex(n.letter) + steps, 7);
+  const pc = mod(pcOf(n) + semis, 12);
+  const acc = wrapAcc(pc - NAT[li]);
+  return Math.abs(acc) > 1 ? respell(pc, li) : { letter: LETTERS[li], acc };
+}
+// Pick the letter shift that spells these notes most simply after moving them: fewest accidentals,
+// no E♯ B♯ F♭ C♭ or double accidentals if it can be helped, flats on a tie (D♭ rather than C♯).
+function letterShift(notes, semis) {
+  let best = null;
+  for (let steps = 0; steps < 7; steps++) {
+    let cost = 0, sum = 0;
+    notes.forEach(n => {
+      const li = mod(letterIndex(n.letter) + steps, 7);
+      const acc = wrapAcc(mod(pcOf(n) + semis, 12) - NAT[li]);
+      const odd = acc !== 0 && NAT[mod(li + Math.sign(acc), 7)] === mod(NAT[li] + acc, 12);
+      cost += Math.abs(acc) > 1 ? 10 : Math.abs(acc) + (odd ? 3 : 0);
+      sum += acc;
+    });
+    // With no notes to go on, use the plain interval: the letter step nearest the semitone count.
+    const near = Math.abs(NAT[steps] - mod(semis, 12));
+    const score = [cost, sum, near];
+    const i = best ? score.findIndex((v, k) => v !== best.score[k]) : -1;
+    if (!best || (i >= 0 && score[i] < best.score[i])) best = { steps, score };
+  }
+  return best.steps;
+}
+function transposeChord(chord, semis, steps) {
+  const c = normalize(chord);
+  if (!c) return null;
+  c.root = transposeNote(c.root, semis, steps);
+  if (c.bass) c.bass = transposeNote(c.bass, semis, steps);
+  return normalize(c);
+}
+// Free-text labels that read as chord symbols: the root and slash bass, with where they sit in the text.
+const LABEL_BASS_RE = /\/\s*([A-Ga-g](?:bb|𝄫|##|𝄪|b|♭|#|♯)?)\s*$/;
+function labelNotes(label) {
+  if (typeof label !== 'string' || !parse(label)) return null;
+  const lead = label.length - label.trimStart().length;
+  const r = readNote(label.slice(lead));
+  const out = [{ note: r.note, at: lead, len: r.len }];
+  const bm = LABEL_BASS_RE.exec(label);
+  if (bm) {
+    const at = bm.index + bm[0].indexOf(bm[1]);
+    if (at > lead) out.push({ note: readNote(bm[1]).note, at, len: bm[1].length });
+  }
+  return out;
+}
+// Transpose the note names in a label, keeping the rest of the text and its ♭/b style. Null if it isn't a chord.
+function transposeLabel(label, semis, steps) {
+  const parts = labelNotes(label);
+  if (!parts) return null;
+  const ascii = /[A-Ga-g](?:b|#)/.test(label) && !/[♭♯𝄫𝄪]/.test(label);
+  const name = n => n.letter + (ascii ? { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': '##' }[n.acc] : ACC_GLYPH[n.acc]);
+  let s = label;
+  parts.slice().reverse().forEach(p => {
+    s = s.slice(0, p.at) + name(transposeNote(p.note, semis, steps)) + s.slice(p.at + p.len);
+  });
+  return s;
+}
+
 const ChordLib = {
   LETTERS, NAT, QUALITIES, SEVENTHS, EXTS, ALT_KEYS, ALT_TEXT, ADD_KEYS, OMIT_KEYS,
   emptyChord, normalize, validate, tones, spell, render, parse, sanitize, apply, optionReason, isOn, closeVoicing,
+  transposeNote, letterShift, transposeChord, labelNotes, transposeLabel,
   noteName, pcOf
 };
 root.ChordLib = ChordLib;

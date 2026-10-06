@@ -260,7 +260,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 <body>
 <div id="app"></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
-<script src="chords.js?v=8"></script>
+<script src="chords.js?v=9"></script>
 <script>
 (() => {
 'use strict';
@@ -612,6 +612,7 @@ function renderSheet() {
     <button class="btn ${view.layout ? 'on' : ''}" data-act="layout" aria-pressed="${view.layout}">${view.layout ? 'Done with layout' : 'Layout'}</button>
     <button class="btn" data-act="styles">Hands</button>
     <button class="btn" data-act="sheet-settings">Symbols</button>
+    <button class="btn" data-act="transpose">Transpose</button>
     <button class="btn primary" data-act="print">Print</button>
   </header>
   <main>
@@ -1047,6 +1048,88 @@ function openSheetSettings() {
   });
 }
 
+/* ================= Transpose ================= */
+const INTERVALS = ['', 'minor 2nd', 'major 2nd', 'minor 3rd', 'major 3rd', 'perfect 4th', 'tritone', 'perfect 5th', 'minor 6th', 'major 6th', 'minor 7th', 'major 7th'];
+function sheetCells(s) { return s.pages.flatMap(p => p.rows.flatMap(r => r.cells.map(cell => ({ cell, n: r.n })))); }
+// One letter shift for the whole sheet, chosen from every chord root and bass, so the chords stay in one key.
+function transposePlan(s, semis) {
+  const notes = [];
+  sheetCells(s).forEach(({ cell }) => {
+    if (cell.chord) { notes.push(cell.chord.root); if (cell.chord.bass) notes.push(cell.chord.bass); }
+    else (ChordLib.labelNotes(cell.label) || []).forEach(p => notes.push(p.note));
+  });
+  return ChordLib.letterShift(notes, semis);
+}
+// Marked keys move by the same amount; a cell that would run off the piano moves an octave the other way.
+function transposeMarks(cell, n, semis) {
+  const ms = Object.keys(cell.marks).map(Number);
+  const fits = d => ms.every(m => m + d >= LOW && m + d <= HIGH);
+  const d = fits(semis) ? semis : fits(semis - Math.sign(semis) * 12) ? semis - Math.sign(semis) * 12 : semis;
+  const marks = {}, fingers = {};
+  ms.forEach(m => { if (m + d >= LOW && m + d <= HIGH) marks[m + d] = cell.marks[m]; });
+  Object.keys(cell.fingers || {}).forEach(k => { const m = +k + d; if (marks[m]) fingers[m] = cell.fingers[k]; });
+  cell.marks = marks; cell.fingers = fingers;
+  if (ms.length) fitStart(cell, n);
+}
+function transposeSheet(s, semis) {
+  const steps = transposePlan(s, semis);
+  let skipped = 0;
+  sheetCells(s).forEach(({ cell, n }) => {
+    if (cell.chord) cell.chord = ChordLib.transposeChord(cell.chord, semis, steps);
+    else if (cell.label.trim()) {
+      const t = ChordLib.transposeLabel(cell.label, semis, steps);
+      if (t !== null) cell.label = t.slice(0, 40);
+      else if (/^\s*[A-Ga-g]/.test(cell.label)) skipped++;
+    }
+    transposeMarks(cell, n, semis);
+  });
+  return skipped;
+}
+function openTranspose() {
+  const s = sheet();
+  let semis = 0;
+  const ov = document.createElement('div');
+  ov.className = 'overlay middle enter';
+  const names = sheetCells(s).map(({ cell }) => cellTitle(cell)).filter(t => t && t.trim()).slice(0, 8);
+  function draw() {
+    let preview = 'Pick how far to move the chords.';
+    if (semis) {
+      const copy = sanitizeSheet(JSON.parse(JSON.stringify(s)));
+      transposeSheet(copy, semis);
+      const after = sheetCells(copy).map(({ cell }) => cell.chord ? ChordLib.render(cell.chord, copy.notation) : cell.label).filter(t => t && t.trim()).slice(0, 8);
+      preview = names.length ? `${names.map(esc).join(' · ')}<br>→ <strong>${after.map(esc).join(' · ')}</strong>` : 'No chord names on this sheet yet. Marked keys will move.';
+    }
+    const a = Math.abs(semis);
+    const amount = semis ? `${semis > 0 ? 'Up' : 'Down'} a ${INTERVALS[a]} · ${a} half step${a > 1 ? 's' : ''}` : 'No change';
+    ov.innerHTML = `<div class="panel center" role="dialog" aria-modal="true" aria-label="Transpose sheet">
+      <h2>Transpose sheet</h2>
+      <p>Moves every chord on every page, and the marked keys with them.</p>
+      <div class="shift-row">
+        <button class="btn" data-t="step" data-v="-1" ${semis > -11 ? '' : 'disabled'} aria-label="Down a half step">−</button>
+        <span class="range" aria-live="polite">${amount}</span>
+        <button class="btn" data-t="step" data-v="1" ${semis < 11 ? '' : 'disabled'} aria-label="Up a half step">+</button>
+      </div>
+      <div class="b-preview">${preview}</div>
+      <div class="dialog-buttons"><button class="btn" data-t="cancel">Cancel</button><button class="btn primary" data-t="go" ${semis ? '' : 'disabled'}>Transpose</button></div>
+    </div>`;
+  }
+  draw();
+  document.body.appendChild(ov);
+  setTimeout(() => ov.classList.remove('enter'), 250);
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') ov.remove(); });
+  ov.addEventListener('click', e => {
+    if (e.target === ov) { ov.remove(); return; }
+    const b = e.target.closest('[data-t]'); if (!b || b.disabled) return;
+    if (b.dataset.t === 'cancel') { ov.remove(); return; }
+    if (b.dataset.t === 'step') { semis = clamp(semis + +b.dataset.v, -11, 11); draw(); return; }
+    pushUndo();
+    const skipped = transposeSheet(s, semis);
+    touch(); ov.remove(); renderSheet();
+    toast(`Transposed ${semis > 0 ? 'up' : 'down'} a ${INTERVALS[Math.abs(semis)]}.` +
+      (skipped ? ` ${skipped} label${skipped > 1 ? 's' : ''} didn’t read as chords and stayed the same.` : ' Undo puts it back.'));
+  });
+}
+
 /* ================= Print ================= */
 async function openPrint() {
   const s = sheet();
@@ -1192,6 +1275,7 @@ app.addEventListener('click', async e => {
     case 'layout': view.layout = !view.layout; view.editor = null; render(); break;
     case 'styles': openStyles('sheet'); break;
     case 'sheet-settings': openSheetSettings(); break;
+    case 'transpose': openTranspose(); break;
     case 'styles-default': openStyles('default'); break;
     case 'print': openPrint(); break;
     case 'row-n': setRowN(pi, ri, +b.dataset.n); break;
@@ -1320,10 +1404,17 @@ window.addEventListener('touchend', e => { if (drag && drag.touch) { if (drag.on
 window.addEventListener('touchcancel', dragCancel);
 app.addEventListener('contextmenu', e => { if (drag && drag.on) e.preventDefault(); });
 
-let resizeTimer;
+// The page scale depends only on width. Height changes come from the on-screen keyboard opening
+// while the title is being typed, and re-rendering then would replace the title and drop focus.
+let resizeTimer, lastWidth = window.innerWidth;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (view.screen === 'sheet') renderSheet(); }, 120);
+  resizeTimer = setTimeout(() => {
+    if (window.innerWidth === lastWidth) return;
+    if (document.activeElement && document.activeElement.matches('.paper-title')) return;
+    lastWidth = window.innerWidth;
+    if (view.screen === 'sheet') renderSheet();
+  }, 120);
 });
 
 /* ================= Boot ================= */

@@ -165,5 +165,42 @@ pool.forEach(c => {
 });
 check('voicing checked on 100+ chords', voiced >= 100, `only ${voiced}`);
 
+/* ---------- Transposition ---------- */
+const transposeAll = (syms, k) => {
+  const cs = syms.map(L.parse);
+  const steps = L.letterShift(cs.flatMap(c => c.bass ? [c.root, c.bass] : [c.root]), k);
+  return cs.map(c => L.render(L.transposeChord(c, k, steps))).join(' ');
+};
+[[['E♭', 'A♭', 'B♭7', 'Cm'], 2, 'F B♭ C7 Dm'],
+ [['E♭', 'A♭', 'B♭7', 'Cm'], 1, 'E A B7 C♯m'],
+ [['E', 'A', 'B7', 'C♯m'], -1, 'E♭ A♭ B♭7 Cm'],
+ [['C', 'F', 'G7', 'Am'], 1, 'D♭ G♭ A♭7 B♭m'],
+ [['C', 'F', 'G7', 'Am'], 6, 'F♯ B C♯7 D♯m'],
+ [['C', 'F', 'G7', 'Am'], -5, 'G C D7 Em'],
+ [['A', 'D', 'E7', 'F♯m'], 2, 'B E F♯7 G♯m'],
+ [['C/E', 'G7/B'], 3, 'E♭/G B♭7/D'],
+ [['E'], 1, 'F'],
+ [['Cmaj7♯11', 'F♯m7♭5'], 12, 'Cmaj7(♯11) F♯m7♭5']].forEach(([syms, k, want]) => {
+  const got = transposeAll(syms, k);
+  check(`transpose ${syms.join(' ')} by ${k}`, got === want, `got "${got}" want "${want}"`);
+});
+check('no notes: plain interval letter steps', L.letterShift([], 2) === 1 && L.letterShift([], 7) === 4 && L.letterShift([], -1) === 6);
+let moved = 0;
+pool.forEach(c => {
+  for (let k = -11; k <= 11; k++) {
+    const t = L.transposeChord(c, k, L.letterShift([c.root], k));
+    const ok = t && !L.validate(t).length && (L.pcOf(t.root) - L.pcOf(c.root) - k + 24) % 12 === 0 &&
+      Math.abs(t.root.acc) <= 1 && t.quality === c.quality && t.seventh === c.seventh && same(t.alt, c.alt);
+    check(`transpose keeps the chord: ${L.render(c)} by ${k}`, ok, t && L.render(t));
+    moved++;
+  }
+});
+check('transposition checked on 2000+ chords', moved >= 2000, `only ${moved}`);
+[['Bb7', 'C7'], [' f#m7b5 ', ' G#m7b5 '], ['C/E', 'D/F♯'], ['Dm7/G', 'Em7/A'], ['D♭maj7', 'E♭maj7'], ['?', null], ['C major', null], ['', null]]
+  .forEach(([label, want]) => {
+    const got = L.transposeLabel(label, 2, 1);
+    check(`transpose label ${JSON.stringify(label)}`, got === want, `got ${JSON.stringify(got)}`);
+  });
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

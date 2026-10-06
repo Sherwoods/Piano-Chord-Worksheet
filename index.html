@@ -101,6 +101,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 
 /* ---------- Home ---------- */
 .home-intro { color: var(--ink-soft); margin: 0 0 var(--s5); max-width: 58ch; font-size: 17px; }
+.home-intro a, .b-preview a { color: var(--felt); }
 .section-title { font-family: var(--serif); font-weight: 600; font-size: 19px; margin: var(--s6) 0 var(--s3); padding-bottom: var(--s2); border-bottom: 1px solid var(--rule); }
 .starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: var(--s3); }
 .starter { display: flex; flex-direction: column; text-align: left; background: var(--stock); border: 1px solid var(--rule); border-radius: var(--radius); padding: var(--s3); box-shadow: var(--lift); transition: border-color .12s, transform .12s; }
@@ -151,10 +152,10 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .cell { position: relative; min-width: 0; border-radius: 6px; }
 .cell-name { display: block; border-bottom: 1px solid #7A8190; max-width: 240px; height: 30px; font-size: 19px; line-height: 30px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
 .cell svg.kbd { display: block; width: 100%; height: auto; max-height: var(--kh, 999px); }
-/* The grand staff sits between the chord name and the keyboard; the keyboard gives up the staff's height
-   (staff 126px + 4px gap). */
+/* The grand staff sits between the chord name and the keyboard; the keyboard gives up the staff's height,
+   which each cell sets as --staff-h (the staff grows to fit high notes and fingers). */
 .cell svg.staff { display: block; width: 100%; height: auto; margin-bottom: 4px; }
-.cell.with-staff svg.kbd { max-height: calc(var(--kh, 999px) - 130px); }
+.cell.with-staff svg.kbd { max-height: calc(var(--kh, 999px) - var(--staff-h, 130px)); }
 .paper.editable .cell { cursor: pointer; }
 .paper.editable .cell:hover { outline: 2px solid #EBD9D6; outline-offset: 5px; }
 .cell.active { outline: 3px solid #7D1D2C !important; outline-offset: 5px; }
@@ -276,8 +277,8 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 <body>
 <div id="app"></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
-<script src="chords.js?v=10"></script>
-<script src="staff.js?v=10"></script>
+<script src="chords.js?v=11"></script>
+<script src="staff.js?v=11"></script>
 <script>
 (() => {
 'use strict';
@@ -555,7 +556,10 @@ function keyboardSVG(cell, n, styles, { interactive = false, pxPerKey = null } =
   const kn = chordKeyNames(cell);
   const lab = m => (kn && kn[m % 12]) || notePc(m, cell.acc);
   let fk = '';
-  const finger = (m, cx) => { if (fingers[m]) fk += `<text class="mark" x="${cx}" y="${WH + 19}" text-anchor="middle" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="11" fill="#1E2433" pointer-events="none">${fingers[m]}</text>`; };
+  const accents = accentKeys(cell);
+  // A black key's finger would run into a neighbouring white key's finger, so it moves up a row then.
+  const crowded = m => !isWhite(m) && (fingers[m - 1] || fingers[m + 1]);
+  const finger = (m, cx) => { if (fingers[m]) fk += `<text class="mark" x="${cx}" y="${crowded(m) ? WH + 10 : WH + 19}" text-anchor="middle" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="11" fill="${accents.has(m) ? '#7D1D2C' : '#1E2433'}" pointer-events="none">${fingers[m]}</text>`; };
   const bg = { L: patternDef(id + 'L', styles.L, '#FFFFFF') + patternDef(id + 'Lb', styles.L, '#8A8A8A'),
                R: patternDef(id + 'R', styles.R, '#FFFFFF') + patternDef(id + 'Rb', styles.R, '#8A8A8A') };
   let wk = '', wm = '', bk = '', bm = '';
@@ -592,13 +596,28 @@ function spellKey(cell, midi) {
   const hit = sp && (sp.notes.find(x => x.pc === midi % 12) || (sp.bass && sp.bass.pc === midi % 12 ? sp.bass : null));
   if (hit) { letter = hit.letter; acc = hit.acc; }
   else [letter, acc] = (cell.acc === 'flat' ? FLAT_NAMES : SHARP_NAMES)[midi % 12];
-  return { letter, acc, octave: Math.round((midi - acc - NAT_PC[letter]) / 12) - 1 };
+  return { letter, acc, octave: Math.round((midi - acc - NAT_PC[letter]) / 12) - 1, finger: (cell.fingers || {})[midi] || null };
+}
+// A scale's fingers follow the cell: a finger tapped on a key wins over the standard fingering, and
+// the color for the starting finger and crossings stays only where the standard finger is kept.
+// Clearing the fingers clears them from the staff too.
+function scaleNoteFinger(cell, n) {
+  const fs = cell.fingers || {};
+  if (!Object.keys(fs).length || !n.finger) return Object.assign({}, n, { finger: n.midi in fs ? fs[n.midi] : null, accent: false });
+  const f = n.midi in fs ? fs[n.midi] : n.finger;
+  return Object.assign({}, n, { finger: f, accent: n.accent && f === n.finger });
+}
+// Keys whose finger is the standard starting finger or a crossing, drawn in color on the keyboard.
+function accentKeys(cell) {
+  const out = new Set();
+  if (cell.scale) ChordLib.scaleMarks(cell.scale).forEach(m => { if (m.accent && (cell.fingers || {})[m.midi] === m.finger) out.add(m.midi); });
+  return out;
 }
 // A scale is drawn note by note in quarter notes with its key signature; anything else is one chord
 // built from the marked keys, right hand on the treble staff and left hand on the bass.
 function staffSVG(cell, n) {
   if (cell.scale) {
-    const columns = ChordLib.scaleColumns(cell.scale).map(c => ({ R: c.R ? [c.R] : [], L: c.L ? [c.L] : [] }));
+    const columns = ChordLib.scaleColumns(cell.scale).map(c => ({ R: c.R ? [scaleNoteFinger(cell, c.R)] : [], L: c.L ? [scaleNoteFinger(cell, c.L)] : [] }));
     return StaffLib.grandStaff({ width: CELL_W[n], columns, sig: ChordLib.keySignature(cell.scale), final: true });
   }
   const col = { R: [], L: [] };
@@ -643,6 +662,8 @@ function renderHome() {
       <button class="btn" data-act="import">Import sheets</button>
       <button class="btn" data-act="styles-default">Default hand colors</button>
     </div>
+    <h2 class="section-title">Scale fingerings</h2>
+    <p class="home-intro">The scale builder fills in standard fingerings. <a href="fingerings.html">See them all on one page</a> to check against your book.</p>
   </main>`;
 }
 
@@ -657,9 +678,10 @@ function pageScale() {
 function cellHTML(cell, n, styles, pi, ri, ci, editable) {
   const out = outOfView(cell, n);
   const active = view.editor && view.editor.pi === pi && view.editor.ri === ri && view.editor.ci === ci;
-  return `<div class="cell ${active ? 'active' : ''} ${cell.staff ? 'with-staff' : ''}" data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cellTitle(cell) || 'blank')}"` : ''}>
+  const staff = cell.staff ? staffSVG(cell, n) : null;
+  return `<div class="cell ${active ? 'active' : ''} ${staff ? 'with-staff' : ''}"${staff ? ` style="--staff-h:${staff.height + 4}px"` : ''} data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cellTitle(cell) || 'blank')}"` : ''}>
     <span class="cell-name"><span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
-    ${cell.staff ? staffSVG(cell, n) : ''}
+    ${staff ? staff.svg : ''}
     ${keyboardSVG(cell, n, styles)}
     ${out ? `<span class="flag">${out} note${out > 1 ? 's' : ''} out of view</span>` : ''}
   </div>`;
@@ -771,7 +793,7 @@ function renderEditor(keepScroll) {
       <div id="parseHint">${built ? '' : parseHintHTML(cell.label)}</div></div>
     <div class="b-row"><span class="lbl">Grand staff</span>
       <button class="chip" data-e="staff" aria-pressed="${cell.staff}">${cell.staff ? 'Shown above the keyboard' : 'Show above the keyboard'}</button></div>
-    ${cell.staff ? `<div class="staff-preview">${staffSVG(cell, n)}</div>
+    ${cell.staff ? `<div class="staff-preview">${staffSVG(cell, n).svg}</div>
       ${s.pages[view.editor.pi].rows.length > 3 ? '<p class="hint" style="margin:4px 0 0">Keyboards on this page shrink to make room for the staff. Pages with 3 rows or fewer keep them full size.</p>' : ''}` : ''}
     <div class="shift-row"><span class="lbl">Transpose this ${cell.scale ? 'scale' : 'chord'}</span>
       <button class="btn" data-e="transpose" data-v="-1" ${canTranspose(cell) ? '' : 'disabled'} aria-label="Transpose this chord down a half step">− ½ step</button>
@@ -898,7 +920,9 @@ function scaleBuilderHTML(cell) {
   if (sc) {
     const sig = ChordLib.keySignature(sc);
     const up = ChordLib.scaleColumns(Object.assign({}, sc, { octaves: 1, dir: 'up' })).map(c => (c.R || c.L).name);
-    preview = `<strong>${esc(ChordLib.scaleName(sc))}</strong> · ${up.map(esc).join(' ')} · ${sig ? `${Math.abs(sig)} ${sig > 0 ? 'sharp' : 'flat'}${Math.abs(sig) > 1 ? 's' : ''}` : 'no sharps or flats'}`;
+    preview = `<strong>${esc(ChordLib.scaleName(sc))}</strong> · ${up.map(esc).join(' ')} · ${sig ? `${Math.abs(sig)} ${sig > 0 ? 'sharp' : 'flat'}${Math.abs(sig) > 1 ? 's' : ''}` : 'no sharps or flats'}`
+      + (ChordLib.scaleFingering(sc, sc.hands === 'L' ? 'L' : 'R') ? '' : '<br>No standard fingering entered for this scale yet. Tap fingers on the keys.')
+      + ` · <a href="fingerings.html">All fingerings</a>`;
   }
   return `${row('Tonic', chips('tonic', B_LETTERS.map(l => [l, l])) + `<div class="seg" role="group" aria-label="Tonic accidental">${B_ACC.map(([v, t]) => scaleChip(cell, 'tonicAcc', v, t, '')).join('')}</div>`)}
     ${row('Type', chips('type', ChordLib.SCALE_TYPES.map(t => [t, ChordLib.SCALE_NAMES[t]])))}
@@ -953,7 +977,11 @@ function onBuilderTap(b) {
 // The keyboard follows the scale builder too: right hand from the tonic above middle C, left hand below.
 function markScale(cell, n) {
   cell.marks = {}; cell.fingers = {};
-  if (cell.scale) ChordLib.scaleMarks(cell.scale).forEach(m => { if (m.midi >= LOW && m.midi <= HIGH) cell.marks[m.midi] = m.hand; });
+  if (cell.scale) ChordLib.scaleMarks(cell.scale).forEach(m => {
+    if (m.midi < LOW || m.midi > HIGH) return;
+    cell.marks[m.midi] = m.hand;
+    if (m.finger) cell.fingers[m.midi] = m.finger;
+  });
   fitStart(cell, n);
 }
 function onScaleTap(b) {

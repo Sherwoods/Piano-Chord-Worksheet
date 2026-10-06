@@ -493,15 +493,21 @@ function scaleColumns(s) {
     let down = [];
     if (s.dir === 'updown') down = scaleRun(s, oct[h], SCALE_STEPS[s.type === 'melodic' ? 'natural' : s.type]).reverse().slice(1);
     runs[h] = up.concat(down);
+    const fing = scaleFingering(s, h);
+    if (fing) runs[h].forEach((n, i) => { n.finger = fing[i].finger; n.accent = fing[i].accent; });
   });
   const len = runs[hands[0]].length;
   return Array.from({ length: len }, (_, i) => ({ R: runs.R ? runs.R[i] : null, L: runs.L ? runs.L[i] : null }));
 }
-// Keys to mark on the keyboard: the ascending form for each hand.
+// Keys to mark on the keyboard: the ascending form for each hand, with its fingers when there are any.
+// accent: the starting finger or a crossing on the way up.
 function scaleMarks(s) {
   const oct = scaleOctaves(s), out = [];
-  (s.hands === 'both' ? ['R', 'L'] : [s.hands]).forEach(h =>
-    scaleRun(s, oct[h], SCALE_STEPS[s.type]).forEach(n => out.push({ midi: n.midi, hand: h, name: n.name })));
+  (s.hands === 'both' ? ['R', 'L'] : [s.hands]).forEach(h => {
+    const fing = scaleFingering(Object.assign({}, s, { dir: 'up' }), h);
+    scaleRun(s, oct[h], SCALE_STEPS[s.type]).forEach((n, i) => out.push({
+      midi: n.midi, hand: h, name: n.name, finger: fing ? fing[i].finger : null, accent: fing ? fing[i].accent : false }));
+  });
   return out;
 }
 function applyScale(s, group, value) {
@@ -534,6 +540,57 @@ function isScaleOn(s, group, value) {
   if (group === 'tonicAcc') return s.tonic.acc === value;
   return s[group] === value;
 }
+/* ---------- Scale fingering ----------
+   Standard fingerings as Alfred's Complete Book of Scales gives them, by the tonic's pitch class, so
+   enharmonic keys share them (D♭ and C♯ major are the same keys). One octave going up, right hand and
+   left hand. Natural minor uses the harmonic minor fingering, except G♯/A♭ where its 7th (F♯) is a
+   black key and the left hand changes. Melodic minor on a black-key tonic
+   changes fingers between going up and coming down; those aren't entered yet, so they have none. */
+const FINGERING = {
+  major: [
+    ['12312345', '54321321'], ['23123412', '32143213'], ['12312345', '54321321'], ['31234123', '32143213'],
+    ['12312345', '54321321'], ['12341234', '54321321'], ['23412312', '43213214'], ['12312345', '54321321'],
+    ['34123123', '32143213'], ['12312345', '54321321'], ['21231234', '32143213'], ['12312345', '43214321']],
+  minor: [
+    ['12312345', '54321321'], ['34123123', '32143213'], ['12312345', '54321321'], ['31234123', '21432132'],
+    ['12312345', '54321321'], ['12341234', '54321321'], ['34123123', '43213214'], ['12312345', '54321321'],
+    ['34123123', '32143213'], ['12312345', '54321321'], ['21231234', '21321432'], ['12312345', '43214321']],
+  natural: { 8: ['34123123', '32132143'] }
+};
+const MELODIC_BLACK = [1, 3, 6, 8, 10];
+// One-octave fingers for a hand, or null when there's no fingering for this scale.
+function octaveFingers(s, hand) {
+  const pc = pcOf(s.tonic);
+  if (s.type === 'melodic' && MELODIC_BLACK.includes(pc)) return null;
+  const row = s.type === 'major' ? FINGERING.major[pc] : (s.type === 'natural' && FINGERING.natural[pc]) || FINGERING.minor[pc];
+  return row[hand === 'R' ? 0 : 1].split('').map(Number);
+}
+// Fingers going up, over one or two octaves. The left hand repeats its octave pattern from the second
+// note; the right hand passes through the middle tonic with the finger that keeps the pattern going
+// (the thumb after a 5, as in C major, and in F, which ends on 4 but crosses with the thumb).
+function runFingers(s, hand) {
+  const f = octaveFingers(s, hand);
+  if (!f) return null;
+  if (s.octaves === 1) return f;
+  if (hand === 'L') return f.concat(f.slice(1));
+  const mid = f[7] === 5 || pcOf(s.tonic) === 5 ? 1 : f[7];
+  return f.slice(0, 7).concat([mid], f.slice(1, 7), [f[7]]);
+}
+// Fingers in playing order (up, then down if the scale comes back), with the starting finger and every
+// crossing marked: a thumb passing under or a finger passing over, where the next finger isn't the
+// neighbour of the last one in the direction the hand is moving.
+function scaleFingering(s, hand) {
+  const up = runFingers(s, hand);
+  if (!up) return null;
+  const seq = s.dir === 'updown' ? up.concat(up.slice(0, -1).reverse()) : up;
+  const top = up.length - 1;
+  return seq.map((f, i) => {
+    if (i === 0) return { finger: f, accent: true };
+    const rising = i <= top, step = (hand === 'R') === rising ? 1 : -1;
+    return { finger: f, accent: f !== seq[i - 1] + step };
+  });
+}
+
 // A scale is read through its key signature, so after transposing, the tonic takes whichever spelling
 // has fewer sharps or flats (B♭ minor, not A♯ minor), and never one with no key signature (G♯ major).
 function transposeScale(s, semis, steps) {
@@ -550,7 +607,7 @@ function transposeScale(s, semis, steps) {
 const ChordLib = {
   LETTERS, NAT, QUALITIES, SEVENTHS, EXTS, ALT_KEYS, ALT_TEXT, ADD_KEYS, OMIT_KEYS,
   SCALE_TYPES, SCALE_NAMES, keySignature, keySignatureMap, newScale, scaleName, validateScale, sanitizeScale,
-  scaleColumns, scaleMarks, applyScale, scaleOptionReason, isScaleOn, transposeScale,
+  scaleColumns, scaleMarks, scaleFingering, applyScale, scaleOptionReason, isScaleOn, transposeScale,
   emptyChord, normalize, validate, tones, spell, render, parse, sanitize, apply, optionReason, isOn, closeVoicing,
   transposeNote, letterShift, transposeChord, labelNotes, transposeLabel,
   noteName, pcOf

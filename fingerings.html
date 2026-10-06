@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scale Fingerings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+/* Check sheet for the scale builder's fingerings. Built from the same table the app uses (chords.js),
+   so what is checked here is exactly what the app draws. */
+:root {
+  --ink: #23262E; --ink-soft: #4A4D55; --rule: #D6D0C4; --desk: #E9E5DD; --stock: #F8F6F1; --felt: #7D1D2C;
+  --serif: 'Source Serif 4', Georgia, serif; --sans: 'Atkinson Hyperlegible', system-ui, sans-serif;
+}
+html { -webkit-text-size-adjust: 100%; background: var(--desk); }
+body { margin: 0; background: var(--desk); color: var(--ink); font-family: var(--serif); font-size: 16px; line-height: 1.45; }
+main { max-width: 880px; margin: 0 auto; padding: 20px 16px 64px; }
+h1 { font-weight: 600; font-size: 26px; margin: 0 0 6px; }
+h2 { font-weight: 600; font-size: 20px; margin: 28px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--rule); break-after: avoid; }
+p { margin: 0 0 10px; color: var(--ink-soft); max-width: 62ch; }
+a { color: var(--felt); }
+.key { background: var(--stock); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; break-inside: avoid; }
+.key h3 { font-family: var(--sans); font-size: 15px; margin: 0 0 4px; }
+.hand { display: grid; grid-template-columns: 34px 1fr; gap: 6px; align-items: start; margin: 2px 0; }
+.hand > span { font-family: var(--sans); font-size: 12px; color: var(--ink-soft); padding-top: 3px; }
+.notes { display: flex; flex-wrap: wrap; gap: 2px 0; }
+.n { display: inline-flex; flex-direction: column; align-items: center; min-width: 30px; font-family: var(--sans); }
+.n b { font-size: 16px; line-height: 1.2; }
+.n i { font-style: normal; font-size: 12px; color: var(--ink-soft); }
+.n.acc b { color: var(--felt); }
+.n.turn { border-left: 1px dashed var(--rule); }
+.none { font-family: var(--sans); font-size: 14px; color: var(--felt); padding: 2px 0; }
+.legend b { color: var(--felt); font-family: var(--sans); }
+@media print {
+  html, body { background: #fff; }
+  main { padding: 0; max-width: none; }
+  .key { background: #fff; }
+  .no-print { display: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Scale fingerings</h1>
+  <p>These are the fingerings the scale builder fills in, one octave up and back down. Check them against Alfred's
+    <i>Complete Book of Scales</i>. Numbers in <span class="legend"><b>red</b></span> are the starting finger and
+    each crossing, the same ones colored on worksheets.</p>
+  <p class="no-print"><a href="./">‹ Back to the worksheets</a></p>
+  <div id="out"></div>
+</main>
+<script src="chords.js?v=11"></script>
+<script>
+(function () {
+  'use strict';
+  const L = window.ChordLib;
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const note = (l, a) => ({ letter: l, acc: a });
+  // Keys in circle-of-fifths order, every spelling the builder allows.
+  const MAJORS = [['C', 0], ['G', 0], ['D', 0], ['A', 0], ['E', 0], ['B', 0], ['F', 1], ['C', 1], ['F', 0], ['B', -1], ['E', -1], ['A', -1], ['D', -1], ['G', -1], ['C', -1]];
+  const MINORS = [['A', 0], ['E', 0], ['B', 0], ['F', 1], ['C', 1], ['G', 1], ['D', 1], ['A', 1], ['D', 0], ['G', 0], ['C', 0], ['F', 0], ['B', -1], ['E', -1], ['A', -1]];
+  function handRow(s, h) {
+    const cols = L.scaleColumns(Object.assign({}, s, { hands: h, octaves: 1, dir: 'updown' }));
+    if (!cols[0][h].finger) return `<div class="hand"><span>${h === 'R' ? 'RH' : 'LH'}</span><div class="none">No standard fingering entered yet.</div></div>`;
+    return `<div class="hand"><span>${h === 'R' ? 'RH' : 'LH'}</span><div class="notes">${cols.map((c, i) => {
+      const n = c[h];
+      return `<span class="n${n.accent ? ' acc' : ''}${i === 8 ? ' turn' : ''}"><b>${n.finger}</b><i>${esc(n.name)}</i></span>`;
+    }).join('')}</div></div>`;
+  }
+  function section(title, keys, type) {
+    return `<h2>${title}</h2>` + keys.map(([l, a]) => {
+      const s = Object.assign(L.newScale(note(l, a)), { type });
+      return `<div class="key"><h3>${esc(L.scaleName(s))}</h3>${handRow(s, 'R')}${handRow(s, 'L')}</div>`;
+    }).join('');
+  }
+  document.getElementById('out').innerHTML =
+    section('Major', MAJORS, 'major') + section('Natural minor', MINORS, 'natural') +
+    section('Harmonic minor', MINORS, 'harmonic') + section('Melodic minor', MINORS, 'melodic');
+})();
+</script>
+</body>
+</html>

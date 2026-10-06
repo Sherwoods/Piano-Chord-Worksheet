@@ -25,7 +25,7 @@ const INK = '#1E2433';
 // Vertical layout: treble staff, room for middle C ledger lines, bass staff.
 const TREBLE_TOP = 4 * S, TREBLE_BOTTOM = TREBLE_TOP + 4 * S;
 const BASS_TOP = TREBLE_BOTTOM + 5 * S, BASS_BOTTOM = BASS_TOP + 4 * S;
-const HEIGHT = BASS_BOTTOM + 4 * S;
+const ACCENT = '#7D1D2C';                      // starting finger and crossings
 const LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 // Right hand reads the treble staff, left hand the bass. ref: the step of the bottom line; mid: the middle line.
 const STAFF = { R: { bottom: TREBLE_BOTTOM, ref: 30, mid: 34 }, L: { bottom: BASS_BOTTOM, ref: 18, mid: 22 } };
@@ -67,11 +67,13 @@ function shownAccidentals(columns, sig) {
   });
 }
 
-// One staff's notes in one column: noteheads (seconds set beside each other), stem, ledger lines, accidentals.
+// One staff's notes in one column: noteheads (seconds set beside each other), stem, ledger lines,
+// accidentals, and finger numbers (above the treble staff, below the bass). Returns the drawing and how
+// far up and down it reaches, so the staff can make room.
 function drawColumn(h, notes, shows, x, stem) {
   const st = STAFF[h];
   const items = notes.map((n, i) => ({ n, step: stepOf(n), show: shows[i] })).sort((a, b) => a.step - b.step);
-  if (!items.length) return '';
+  if (!items.length) return { svg: '', top: Infinity, bottom: -Infinity };
   const lo = items[0].step, hi = items[items.length - 1].step;
   const down = hi - st.mid > st.mid - lo || (lo === hi && lo >= st.mid);
   // A note a step from its neighbour goes on the other side of the stem.
@@ -89,10 +91,12 @@ function drawColumn(h, notes, shows, x, stem) {
   for (let s = st.ref + 10; s <= hi; s += 2) ledger(s);
   for (let s = st.ref - 2; s >= lo; s -= 2) ledger(s);
   items.forEach((it, i) => { out += glyph('noteheadBlack', xs[i], yOf(h, it.step)); });
+  let top = yOf(h, hi) - 0.6 * S, bottom = yOf(h, lo) + 0.6 * S;
   if (stem) {
     const sx = down ? x + 0.6 : x + HEAD_W - 0.6;
     out += down ? line(sx, yOf(h, hi), sx, yOf(h, lo) + 3.5 * S, 1)
                 : line(sx, yOf(h, lo), sx, yOf(h, hi) - 3.5 * S, 1);
+    if (down) bottom = yOf(h, lo) + 3.5 * S; else top = yOf(h, hi) - 3.5 * S;
   }
   // Accidentals, top down, each in the first column to the left where it doesn't clash.
   const cols = [];
@@ -102,14 +106,33 @@ function drawColumn(h, notes, shows, x, stem) {
     cols[c].push(it.step);
     const g = ACC_GLYPH[it.n.acc];
     out += glyph(g, left - 0.25 * S - (c + 1) * 1.2 * S - (GLYPHS[g].w * U - S), yOf(h, it.step));
+    top = Math.min(top, yOf(h, it.step) - 1.8 * S); bottom = Math.max(bottom, yOf(h, it.step) + 1.5 * S);
   });
-  return out;
+  // Fingers: the top note's finger on top. Right hand clears the staff and the notes from above,
+  // left hand from below.
+  const fingered = items.filter(it => it.n.finger);
+  if (fingered.length) {
+    const cx = x + HEAD_W / 2, gap = 1.35 * S;
+    const text = (it, y) => `<text x="${r1(cx)}" y="${r1(y)}" text-anchor="middle" font-family="Atkinson Hyperlegible, system-ui, sans-serif" font-weight="700" font-size="${1.5 * S}" fill="${it.n.accent ? ACCENT : INK}">${it.n.finger}</text>`;
+    if (h === 'R') {
+      let y = Math.min(TREBLE_TOP - 0.8 * S, top - 0.5 * S);
+      fingered.forEach(it => { out += text(it, y); y -= gap; });
+      top = y + gap - 1.2 * S;
+    } else {
+      let y = Math.max(BASS_BOTTOM + 2 * S, bottom + 1.7 * S);
+      fingered.slice().reverse().forEach(it => { out += text(it, y); y += gap; });
+      bottom = y - gap + 0.4 * S;
+    }
+  }
+  return { svg: out, top, bottom };
 }
 
 /* A grand staff.
    width: px; columns: [{ R: [notes], L: [notes] }] played left to right, notes as { letter, acc, octave };
    sig: sharps (+) or flats (−) in the key signature; final: end with a final bar line.
-   Everything but the clefs, staff lines and key signature is grouped in .staff-notes so it can be hidden. */
+   Notes may carry finger (1-5) and accent (draw the finger in color).
+   Everything but the clefs, staff lines and key signature is grouped in .staff-notes so it can be hidden.
+   Returns { svg, height }: the staff grows to fit high or low notes and their fingers. */
 function grandStaff({ width, columns, sig = 0, final = false }) {
   const W = width, x0 = 7;
   let out = '';
@@ -133,18 +156,22 @@ function grandStaff({ width, columns, sig = 0, final = false }) {
   const start = x + (n ? 1 : 0.5) * S + 1.6 * S;
   const pitch = columns.length > 1 ? Math.min((end - start - HEAD_W - S) / (columns.length - 1), 6 * S) : 0;
   const shows = shownAccidentals(columns, sig);
-  let notes = '';
+  let notes = '', top = TREBLE_TOP - 2 * S, bottom = BASS_BOTTOM + 2 * S;
   columns.forEach((col, i) => {
     const cx = columns.length > 1 ? start + i * pitch : start + 1.5 * S;
-    ['R', 'L'].forEach(h => { notes += drawColumn(h, col[h] || [], shows[i][h], cx, true); });
+    ['R', 'L'].forEach(h => {
+      const d = drawColumn(h, col[h] || [], shows[i][h], cx, true);
+      notes += d.svg; top = Math.min(top, d.top - 0.3 * S); bottom = Math.max(bottom, d.bottom + 0.3 * S);
+    });
   });
   out += `<g class="staff-notes">${notes}</g>`;
   if (final) out += line(W - 4.2, TREBLE_TOP, W - 4.2, BASS_BOTTOM, 1) + line(W - 1.5, TREBLE_TOP, W - 1.5, BASS_BOTTOM, 3);
   else out += line(W - 0.5, TREBLE_TOP, W - 0.5, BASS_BOTTOM, 1);
-  return `<svg class="staff" viewBox="0 0 ${W} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="${INK}">${out}</g></svg>`;
+  top = Math.floor(top); const height = Math.ceil(bottom) - top;
+  return { svg: `<svg class="staff" viewBox="0 ${top} ${W} ${height}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="${INK}">${out}</g></svg>`, height };
 }
 
-const StaffLib = { HEIGHT, grandStaff, shownAccidentals, keySignatureMap, stepOf };
+const StaffLib = { grandStaff, shownAccidentals, keySignatureMap, stepOf };
 root.StaffLib = StaffLib;
 if (typeof module !== 'undefined' && module.exports) module.exports = StaffLib;
 })(typeof window !== 'undefined' ? window : globalThis);

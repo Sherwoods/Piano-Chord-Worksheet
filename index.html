@@ -674,6 +674,9 @@ function renderEditor(keepScroll) {
   const oldScroller = editorEl && editorEl.querySelector('.kbd-scroll');
   const prevScroll = oldScroller ? oldScroller.scrollLeft : null;
   const hadFocusName = document.activeElement && document.activeElement.id === 'chordName';
+  // Every change redraws the panel; keep its scroll position so a tap doesn't jump back to the top.
+  const oldPanel = editorEl && editorEl.querySelector('.panel');
+  const prevTop = oldPanel ? oldPanel.scrollTop : 0;
   if (!editorEl) {
     editorEl = document.createElement('div');
     editorEl.className = 'overlay enter';
@@ -735,6 +738,7 @@ function renderEditor(keepScroll) {
       <button class="btn" data-e="copy-next" ${idx < total - 1 && cellHasContent(cell) ? '' : 'disabled'}>Copy to next</button>
     </div>
   </div>`;
+  editorEl.querySelector('.panel').scrollTop = prevTop;
   const sc = editorEl.querySelector('.kbd-scroll');
   if (keepScroll && prevScroll !== null) sc.scrollLeft = prevScroll;
   else centerScroll(sc, cell, n);

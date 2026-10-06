@@ -260,7 +260,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 <body>
 <div id="app"></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
-<script src="chords.js?v=8"></script>
+<script src="chords.js?v=9"></script>
 <script>
 (() => {
 'use strict';
@@ -612,6 +612,7 @@ function renderSheet() {
     <button class="btn ${view.layout ? 'on' : ''}" data-act="layout" aria-pressed="${view.layout}">${view.layout ? 'Done with layout' : 'Layout'}</button>
     <button class="btn" data-act="styles">Hands</button>
     <button class="btn" data-act="sheet-settings">Symbols</button>
+    <button class="btn" data-act="transpose">Transpose</button>
     <button class="btn primary" data-act="print">Print</button>
   </header>
   <main>
@@ -698,6 +699,10 @@ function renderEditor(keepScroll) {
     <div class="field"><label for="chordName">Custom label</label>
       <input id="chordName" class="text-in" value="${esc(cell.chord ? '' : cell.label)}" maxlength="40" placeholder="${cell.chord ? 'Typing here replaces the built chord' : 'Blank or ? for students to fill in'}" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div id="parseHint">${cell.chord ? '' : parseHintHTML(cell.label)}</div></div>
+    <div class="shift-row"><span class="lbl">Transpose this chord</span>
+      <button class="btn" data-e="transpose" data-v="-1" ${canTranspose(cell) ? '' : 'disabled'} aria-label="Transpose this chord down a half step">− ½ step</button>
+      <button class="btn" data-e="transpose" data-v="1" ${canTranspose(cell) ? '' : 'disabled'} aria-label="Transpose this chord up a half step">+ ½ step</button>
+    </div>
     <div class="controls">
       <div><span class="lbl">Marking</span><div class="seg" role="group" aria-label="Hand">
         <button data-e="hand" data-v="L" aria-pressed="${view.hand === 'L'}"><span class="swatch-dot" style="background:${st.L.color}"></span>Left hand</button>
@@ -743,6 +748,7 @@ function centerScroll(sc, cell, n) {
   const px = (target - cell.start + 0.5) * 42 + 10;
   sc.scrollLeft = Math.max(0, px - sc.clientWidth / 2);
 }
+const canTranspose = cell => !!(cell.chord || ChordLib.labelNotes(cell.label) || Object.keys(cell.marks).length);
 // The builder starts open when the cell has a built chord or nothing at all.
 function setBuilderOpen() { const { cell } = cellAt(view.editor); view.builderOpen = !!cell.chord || !cell.label.trim(); }
 function openEditor(pi, ri, ci) { view.editor = { pi, ri, ci }; setBuilderOpen(); renderSheet(); renderEditor(); }
@@ -879,6 +885,13 @@ async function onEditorClick(ev) {
     pushUndo(); cell.chord = p; cell.label = ''; view.builderOpen = true;
     markChord(cell, row.n);
     touch(); refreshActiveCell(); renderEditor();
+  }
+  else if (act === 'transpose') {
+    const semis = +b.dataset.v;
+    pushUndo();
+    const skipped = transposeCell(cell, row.n, semis, ChordLib.letterShift(cellNotes(cell), semis), false);
+    touch(); refreshActiveCell(); renderEditor();
+    if (skipped) toast('The label didn’t read as a chord, so only the keys moved.');
   }
   else if (act === 'clear-notes') { pushUndo(); cell.marks = {}; cell.fingers = {}; touch(); refreshActiveCell(); renderEditor(true); }
   else if (act === 'clear-all') { pushUndo(); Object.assign(cell, newCell(row.n)); touch(); refreshActiveCell(); renderEditor(); }
@@ -1047,6 +1060,106 @@ function openSheetSettings() {
   });
 }
 
+/* ================= Transpose ================= */
+const INTERVALS = ['', 'minor 2nd', 'major 2nd', 'minor 3rd', 'major 3rd', 'perfect 4th', 'tritone', 'perfect 5th', 'minor 6th', 'major 6th', 'minor 7th', 'major 7th'];
+function sheetCells(s) { return s.pages.flatMap(p => p.rows.flatMap(r => r.cells.map(cell => ({ cell, n: r.n })))); }
+const intervalText = semis => `${semis > 0 ? 'up' : 'down'} a ${INTERVALS[Math.abs(semis)]}`;
+const cellNotes = cell => cell.chord ? [cell.chord.root].concat(cell.chord.bass ? [cell.chord.bass] : [])
+  : (ChordLib.labelNotes(cell.label) || []).map(p => p.note);
+// One letter shift for the whole sheet, chosen from every chord root and bass, so the chords stay in one key.
+function transposePlan(s, semis) { return ChordLib.letterShift(sheetCells(s).flatMap(({ cell }) => cellNotes(cell)), semis); }
+// Marked keys and finger numbers move with the chord. nearC: go up or down, whichever leaves the
+// chord nearer middle C (the whole-sheet transpose). Otherwise move exactly as asked (half-step taps).
+// Either way, a chord that would run off the piano goes an octave the other way.
+function transposeMarks(cell, n, semis, nearC) {
+  const ms = Object.keys(cell.marks).map(Number);
+  if (!ms.length) return;
+  const fits = d => ms.every(m => m + d >= LOW && m + d <= HIGH);
+  const k = ((semis % 12) + 12) % 12;
+  const opts = (nearC ? (k ? [k, k - 12] : [0]) : [semis, semis - Math.sign(semis) * 12]).filter(fits);
+  const center = (Math.min(...ms) + Math.max(...ms)) / 2;
+  const away = d => Math.abs(center + d - MIDDLE_C);
+  const d = !opts.length ? semis : nearC ? opts.reduce((a, b) => away(b) < away(a) || (away(b) === away(a) && Math.abs(b) < Math.abs(a)) ? b : a) : opts[0];
+  const marks = {}, fingers = {};
+  ms.forEach(m => { if (m + d >= LOW && m + d <= HIGH) marks[m + d] = cell.marks[m]; });
+  Object.keys(cell.fingers || {}).forEach(f => { const m = +f + d; if (marks[m]) fingers[m] = cell.fingers[f]; });
+  cell.marks = marks; cell.fingers = fingers;
+  fitStart(cell, n);
+}
+// Returns true when the cell has a label that looks like a note name but couldn't be read as a chord.
+function transposeCell(cell, n, semis, steps, nearC) {
+  let skipped = false;
+  if (cell.chord) cell.chord = ChordLib.transposeChord(cell.chord, semis, steps);
+  else if (cell.label.trim()) {
+    const t = ChordLib.transposeLabel(cell.label, semis, steps);
+    if (t !== null) cell.label = t.slice(0, 40);
+    else skipped = /^\s*[A-Ga-g]/.test(cell.label);
+  }
+  transposeMarks(cell, n, semis, nearC);
+  return skipped;
+}
+function transposeSheet(s, semis) {
+  const steps = transposePlan(s, semis);
+  return sheetCells(s).filter(({ cell, n }) => transposeCell(cell, n, semis, steps, true)).length;
+}
+const skippedText = k => k ? ` ${k} label${k > 1 ? 's' : ''} didn’t read as chords and stayed the same.` : '';
+function openTranspose() {
+  const s = sheet();
+  let semis = 0, asCopy = false;
+  const ov = document.createElement('div');
+  ov.className = 'overlay middle enter';
+  const names = sheetCells(s).map(({ cell }) => cellTitle(cell)).filter(t => t && t.trim()).slice(0, 8);
+  function draw() {
+    let preview = 'Pick how far to move the chords.';
+    if (semis) {
+      const copy = sanitizeSheet(JSON.parse(JSON.stringify(s)));
+      transposeSheet(copy, semis);
+      const after = sheetCells(copy).map(({ cell }) => cell.chord ? ChordLib.render(cell.chord, copy.notation) : cell.label).filter(t => t && t.trim()).slice(0, 8);
+      preview = names.length ? `${names.map(esc).join(' · ')}<br>→ <strong>${after.map(esc).join(' · ')}</strong>` : 'No chord names on this sheet yet. Marked keys will move.';
+    }
+    const a = Math.abs(semis);
+    const amount = semis ? `${semis > 0 ? 'Up' : 'Down'} a ${INTERVALS[a]} · ${a} half step${a > 1 ? 's' : ''}` : 'No change';
+    ov.innerHTML = `<div class="panel center" role="dialog" aria-modal="true" aria-label="Transpose sheet">
+      <h2>Transpose sheet</h2>
+      <p>Moves every chord on every page. Each chord’s keys go up or down, whichever keeps it nearer middle C.</p>
+      <div class="shift-row">
+        <button class="btn" data-t="step" data-v="-1" ${semis > -11 ? '' : 'disabled'} aria-label="Down a half step">−</button>
+        <span class="range" aria-live="polite">${amount}</span>
+        <button class="btn" data-t="step" data-v="1" ${semis < 11 ? '' : 'disabled'} aria-label="Up a half step">+</button>
+      </div>
+      <div class="b-preview">${preview}</div>
+      <label class="check"><input type="checkbox" id="tCopy" ${asCopy ? 'checked' : ''}> Make a transposed copy and keep this sheet as it is</label>
+      <div class="dialog-buttons"><button class="btn" data-t="cancel">Cancel</button><button class="btn primary" data-t="go" ${semis ? '' : 'disabled'}>${asCopy ? 'Make copy' : 'Transpose'}</button></div>
+    </div>`;
+  }
+  draw();
+  document.body.appendChild(ov);
+  setTimeout(() => ov.classList.remove('enter'), 250);
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') ov.remove(); });
+  ov.addEventListener('change', e => { if (e.target.id === 'tCopy') { asCopy = e.target.checked; draw(); } });
+  ov.addEventListener('click', async e => {
+    if (e.target === ov) { ov.remove(); return; }
+    const b = e.target.closest('[data-t]'); if (!b || b.disabled) return;
+    if (b.dataset.t === 'cancel') { ov.remove(); return; }
+    if (b.dataset.t === 'step') { semis = clamp(semis + +b.dataset.v, -11, 11); draw(); return; }
+    if (asCopy) {
+      const name = await askName('Name the copy', `${s.name} (${intervalText(semis)})`.slice(0, 80), 'Make copy');
+      if (!name || !document.body.contains(ov)) return;
+      const c = sanitizeSheet(JSON.parse(JSON.stringify(s)));
+      c.id = uid(); c.name = name; c.updated = Date.now();
+      const skipped = transposeSheet(c, semis);
+      data.sheets.push(c); persist(); ov.remove();
+      openSheet(c.id);
+      toast(`Copy made, ${intervalText(semis)}. The original is unchanged.` + skippedText(skipped));
+      return;
+    }
+    pushUndo();
+    const skipped = transposeSheet(s, semis);
+    touch(); ov.remove(); renderSheet();
+    toast(`Transposed ${intervalText(semis)}.` + (skipped ? skippedText(skipped) : ' Undo puts it back.'));
+  });
+}
+
 /* ================= Print ================= */
 async function openPrint() {
   const s = sheet();
@@ -1192,6 +1305,7 @@ app.addEventListener('click', async e => {
     case 'layout': view.layout = !view.layout; view.editor = null; render(); break;
     case 'styles': openStyles('sheet'); break;
     case 'sheet-settings': openSheetSettings(); break;
+    case 'transpose': openTranspose(); break;
     case 'styles-default': openStyles('default'); break;
     case 'print': openPrint(); break;
     case 'row-n': setRowN(pi, ri, +b.dataset.n); break;
@@ -1320,10 +1434,19 @@ window.addEventListener('touchend', e => { if (drag && drag.touch) { if (drag.on
 window.addEventListener('touchcancel', dragCancel);
 app.addEventListener('contextmenu', e => { if (drag && drag.on) e.preventDefault(); });
 
-let resizeTimer;
+// The page scale depends only on the layout width. Height changes come from the on-screen keyboard,
+// and iOS reports zoom (it zooms in on small text being edited) as a window size change too.
+// Re-rendering then would replace the title being typed and drop focus.
+const layoutWidth = () => document.documentElement.clientWidth;
+let resizeTimer, lastWidth = layoutWidth();
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (view.screen === 'sheet') renderSheet(); }, 120);
+  resizeTimer = setTimeout(() => {
+    if (layoutWidth() === lastWidth) return;
+    if (document.activeElement && document.activeElement.matches('.paper-title')) return;
+    lastWidth = layoutWidth();
+    if (view.screen === 'sheet') renderSheet();
+  }, 120);
 });
 
 /* ================= Boot ================= */

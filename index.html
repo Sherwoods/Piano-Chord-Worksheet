@@ -255,6 +255,15 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
   body.hide-marks .mark { display: none; }
   body.no-nameline .name-line { visibility: hidden; }
 }
+/* iPhone and iPad (every browser there uses Safari's engine): printing at 100% let the page break land
+   inside the last row, which pushed its keyboard down below its chord name and cut it off. Printing at
+   98-99% avoided it, so the sheet prints slightly smaller there, centered. Other browsers are unaffected:
+   only iOS supports -webkit-touch-callout. */
+@supports (-webkit-touch-callout: none) {
+  @media print {
+    .paper { zoom: 0.96; margin: 0 auto !important; }
+  }
+}
 </style>
 </head>
 <body>

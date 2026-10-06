@@ -239,9 +239,6 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .print-only { display: none; }
 /* Print geometry is fixed: the page has no browser margin and the sheet carries its own 0.5in margin,
    so the printout matches the on-screen page no matter which browser or margin setting is used. */
-/* The printed sheet is 1036px, not the full 1056px of the page: Safari breaks the page a little early,
-   and a sheet that came within a few pixels of the bottom had its last row's keyboard pushed down and
-   cut off. The trimmed space is blank bottom margin, so the content prints in the same place. */
 @page { size: 8.5in 11in; margin: 0; }
 @media print {
   html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -251,12 +248,21 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
   .pages { display: block !important; }
   .page-wrap { max-width: none !important; width: auto !important; }
   .paper-frame { height: auto !important; overflow: visible !important; }
-  .paper { transform: none !important; box-shadow: none !important; width: 816px !important; height: 1036px !important; padding: 48px 48px 30px !important; margin: 0 !important; overflow: hidden !important; break-after: page; page-break-after: always; break-inside: avoid; }
+  .paper { transform: none !important; box-shadow: none !important; width: 816px !important; height: 1054px !important; padding: 48px !important; margin: 0 !important; overflow: hidden !important; break-after: page; page-break-after: always; break-inside: avoid; }
   .page-wrap:last-child .paper { break-after: auto; page-break-after: auto; }
   .cell, .cell.active, .paper.editable .cell:hover { outline: none !important; }
   body.hide-names .cell-name-text { visibility: hidden; }
   body.hide-marks .mark { display: none; }
   body.no-nameline .name-line { visibility: hidden; }
+}
+/* iPhone and iPad (every browser there uses Safari's engine): printing at 100% let the page break land
+   inside the last row, which pushed its keyboard down below its chord name and cut it off. Printing at
+   98-99% avoided it, so the sheet prints slightly smaller there, centered. Other browsers are unaffected:
+   only iOS supports -webkit-touch-callout. */
+@supports (-webkit-touch-callout: none) {
+  @media print {
+    .paper { zoom: 0.96; margin: 0 auto !important; }
+  }
 }
 </style>
 </head>

@@ -202,5 +202,115 @@ check('transposition checked on 2000+ chords', moved >= 2000, `only ${moved}`);
     check(`transpose label ${JSON.stringify(label)}`, got === want, `got ${JSON.stringify(got)}`);
   });
 
+/* ---------- Scales ---------- */
+const Staff = require('../staff.js');
+const scale = (l, a, type, o = {}) => Object.assign(L.newScale({ letter: l, acc: a }), { type }, o);
+const scaleText = s => L.scaleColumns(s).map(c => (c.R || c.L).name + (c.R || c.L).octave).join(' ');
+[[scale('C', 0, 'major', { hands: 'R', dir: 'up' }), 'C4 D4 E4 F4 G4 A4 B4 C5', 0],
+ [scale('A', -1, 'major', { hands: 'R', dir: 'up' }), 'A♭4 B♭4 C5 D♭5 E♭5 F5 G5 A♭5', -4],
+ [scale('C', 1, 'major', { hands: 'R', dir: 'up' }), 'C♯4 D♯4 E♯4 F♯4 G♯4 A♯4 B♯4 C♯5', 7],
+ [scale('C', -1, 'major', { hands: 'R', dir: 'up' }), 'C♭4 D♭4 E♭4 F♭4 G♭4 A♭4 B♭4 C♭5', -7],
+ [scale('A', 0, 'natural', { hands: 'R', dir: 'up' }), 'A4 B4 C5 D5 E5 F5 G5 A5', 0],
+ [scale('A', 0, 'harmonic', { hands: 'R' }), 'A4 B4 C5 D5 E5 F5 G♯5 A5 G♯5 F5 E5 D5 C5 B4 A4', 0],
+ [scale('A', 0, 'melodic', { hands: 'R' }), 'A4 B4 C5 D5 E5 F♯5 G♯5 A5 G5 F5 E5 D5 C5 B4 A4', 0],
+ [scale('G', 1, 'harmonic', { hands: 'R', dir: 'up' }), 'G♯4 A♯4 B4 C♯5 D♯5 E5 F𝄪5 G♯5', 5],
+ [scale('E', -1, 'natural', { hands: 'L', dir: 'up' }), 'E♭3 F3 G♭3 A♭3 B♭3 C♭4 D♭4 E♭4', -6],
+ [scale('B', -1, 'major', { hands: 'R', octaves: 2, dir: 'up' }), 'B♭4 C5 D5 E♭5 F5 G5 A5 B♭5 C6 D6 E♭6 F6 G6 A6 B♭6', -2],
+].forEach(([s, want, sig]) => {
+  check(`scale ${L.scaleName(s)}`, scaleText(s) === want, `got ${scaleText(s)}`);
+  check(`key signature ${L.scaleName(s)}`, L.keySignature(s) === sig, `got ${L.keySignature(s)}`);
+});
+const both = L.scaleColumns(scale('F', 0, 'major'));
+check('both hands: left hand two octaves below, same beat', both.length === 15 && both.every(c => c.R.midi - c.L.midi === 24), JSON.stringify(both[0]));
+check('scale marks: ascending keys per hand', L.scaleMarks(scale('F', 0, 'major')).length === 16 && L.scaleMarks(scale('A', 0, 'melodic', { hands: 'R' })).length === 8);
+check('no key signature is refused with a suggestion', L.validateScale(scale('G', 1, 'major'))[0] === 'G♯ major has no key signature. Use A♭ major.');
+check('both hands only for one octave', !!L.scaleOptionReason(scale('C', 0, 'major'), 'octaves', 2));
+check('tonic needs picking first', L.scaleOptionReason(null, 'type', 'major') === 'Pick a tonic first.');
+check('G♯ in major switches to minor', L.scaleName(L.applyScale(scale('G', 0, 'major'), 'tonicAcc', 1)) === 'G♯ natural minor');
+check('D♭ in minor switches to major', L.scaleName(L.applyScale(scale('D', 0, 'harmonic'), 'tonicAcc', -1)) === 'D♭ major');
+check('sanitize scale', L.sanitizeScale({ tonic: { letter: 'G', acc: 1 }, type: 'major' }) === null && L.sanitizeScale(null) === null &&
+  same(L.sanitizeScale(JSON.parse(JSON.stringify(scale('D', 0, 'melodic')))), scale('D', 0, 'melodic')));
+[[scale('G', 1, 'harmonic'), 2, 1, 'B♭ harmonic minor'], [scale('G', 0, 'major'), 1, 1, 'A♭ major'], [scale('E', 0, 'major'), 4, 2, 'A♭ major'],
+ [scale('C', 0, 'major'), 6, 3, 'F♯ major'], [scale('E', 0, 'major'), -1, 0, 'E♭ major']].forEach(([s, k, st, want]) => {
+  const got = L.scaleName(L.transposeScale(s, k, st));
+  check(`transpose ${L.scaleName(s)} by ${k}`, got === want, `got ${got}`);
+});
+let scalesOk = 0;
+L.LETTERS.forEach(l => [-1, 0, 1].forEach(a => L.SCALE_TYPES.forEach(t => {
+  const s = scale(l, a, t, { hands: 'R' });
+  if (L.validateScale(s).length) return;
+  const cols = L.scaleColumns(s), steps = { major: [2, 2, 1, 2, 2, 2, 1], natural: [2, 1, 2, 2, 1, 2, 2], harmonic: [2, 1, 2, 2, 1, 3, 1], melodic: [2, 1, 2, 2, 2, 2, 1] }[t];
+  const up = cols.slice(0, 8);
+  const ok = up.every((c, i) => i === 0 || (c.R.midi - up[i - 1].R.midi === steps[i - 1] && Staff.stepOf(c.R) - Staff.stepOf(up[i - 1].R) === 1));
+  check(`every scale steps by letter and semitone: ${L.scaleName(s)}`, ok, scaleText(s));
+  scalesOk++;
+})));
+check('checked 50+ scales', scalesOk >= 50, `only ${scalesOk}`);
+
+/* ---------- Staff accidentals ---------- */
+const nt = (letter, acc, octave) => ({ letter, acc, octave });
+const shows = (cols, sig) => Staff.shownAccidentals(cols.map(c => ({ R: c, L: [] })), sig).map(c => c.R.map(Number).join('')).join(' ');
+check('key signature notes need no accidental', shows([[nt('B', -1, 4)], [nt('E', -1, 5)]], -2) === '0 0');
+check('raised note shows, and stays raised', shows([[nt('G', 1, 4)], [nt('G', 1, 4)]], 0) === '1 0');
+check('melodic minor down shows the naturals again', shows([[nt('C', 1, 4)], [nt('C', 0, 4)]], -1) === '1 1');
+check('accidentals belong to one octave', shows([[nt('G', 1, 4)], [nt('G', 1, 5)]], 0) === '1 1');
+const drawn = Staff.grandStaff({ width: 720, columns: L.scaleColumns(scale('A', -1, 'major')).map(c => ({ R: [c.R], L: [c.L] })), sig: -4, final: true });
+check('staff draws without bad numbers', !/NaN|undefined/.test(drawn.svg) && (drawn.svg.match(/class="staff-notes"/g) || []).length === 1 && drawn.height > 0, drawn.svg.slice(0, 200));
+check('staff draws every finger, colored ones for the start and crossings', (drawn.svg.match(/<text /g) || []).length === 30 && (drawn.svg.match(/fill="#7D1D2C"/g) || []).length > 0);
+const high = Staff.grandStaff({ width: 720, columns: L.scaleColumns(scale('B', 0, 'major', { hands: 'R', octaves: 2 })).map(c => ({ R: [c.R], L: [] })), sig: 5, final: true });
+check('staff grows to fit high notes and their fingers', high.height > drawn.height && /viewBox="0 -/.test(high.svg), high.svg.slice(0, 120));
+
+/* ---------- Scale fingering ---------- */
+const fing = (s, h) => (L.scaleFingering(s, h) || []).map(x => x.finger).join('');
+const acc = (s, h) => (L.scaleFingering(s, h) || []).map(x => (x.accent ? '*' : '') + x.finger).join(' ');
+[[scale('C', 0, 'major', { dir: 'up' }), '12312345', '54321321'],
+ [scale('F', 0, 'major', { dir: 'up' }), '12341234', '54321321'],
+ [scale('B', -1, 'major', { dir: 'up' }), '21231234', '32143213'],
+ [scale('E', -1, 'major', { dir: 'up' }), '31234123', '32143213'],
+ [scale('A', -1, 'major', { dir: 'up' }), '34123123', '32143213'],
+ [scale('D', -1, 'major', { dir: 'up' }), '23123412', '32143213'],
+ [scale('C', 1, 'major', { dir: 'up' }), '23123412', '32143213'],
+ [scale('F', 1, 'major', { dir: 'up' }), '23412312', '43213214'],
+ [scale('G', -1, 'major', { dir: 'up' }), '23412312', '43213214'],
+ [scale('B', 0, 'major', { dir: 'up' }), '12312345', '43214321'],
+ [scale('C', -1, 'major', { dir: 'up' }), '12312345', '43214321'],
+ [scale('E', -1, 'harmonic', { dir: 'up' }), '31234123', '21432132'],
+ [scale('B', -1, 'natural', { dir: 'up' }), '21231234', '21321432'],
+ [scale('F', 1, 'harmonic', { dir: 'up' }), '34123123', '43213214'],
+ [scale('C', 1, 'natural', { dir: 'up' }), '34123123', '32143213'],
+ [scale('D', 0, 'melodic', { dir: 'up' }), '12312345', '54321321'],
+ [scale('G', 1, 'natural', { dir: 'up' }), '34123123', '32132143'],
+ [scale('G', 1, 'harmonic', { dir: 'up' }), '34123123', '32143213'],
+].forEach(([s, rh, lh]) => {
+  check(`fingering ${L.scaleName(s)} RH`, fing(s, 'R') === rh, `got ${fing(s, 'R')}`);
+  check(`fingering ${L.scaleName(s)} LH`, fing(s, 'L') === lh, `got ${fing(s, 'L')}`);
+});
+check('two octaves: right hand crosses with the thumb at the middle tonic', fing(scale('C', 0, 'major', { hands: 'R', octaves: 2, dir: 'up' }), 'R') === '123123412312345');
+check('two octaves: F major right hand thumb in the middle, 4 on top', fing(scale('F', 0, 'major', { hands: 'R', octaves: 2, dir: 'up' }), 'R') === '123412312341234');
+check('two octaves: left hand repeats from the second note', fing(scale('C', 0, 'major', { hands: 'L', octaves: 2, dir: 'up' }), 'L') === '543213214321321');
+check('coming down reverses the fingers', fing(scale('C', 0, 'major'), 'R') === '123123454321321');
+check('start and crossings marked, C major RH', acc(scale('C', 0, 'major'), 'R') === '*1 2 3 *1 2 3 4 5 4 3 2 1 *3 2 1', acc(scale('C', 0, 'major'), 'R'));
+check('start and crossings marked, C major LH', acc(scale('C', 0, 'major'), 'L') === '*5 4 3 2 1 *3 2 1 2 3 *1 2 3 4 5', acc(scale('C', 0, 'major'), 'L'));
+check('melodic minor on a black tonic has no fingering yet', [1, 3, 6, 8, 10].every(pc => {
+  const t = [['C', 1], ['E', -1], ['F', 1], ['G', 1], ['B', -1]][[1, 3, 6, 8, 10].indexOf(pc)];
+  return L.scaleFingering(scale(t[0], t[1], 'melodic'), 'R') === null && L.scaleFingering(scale(t[0], t[1], 'melodic'), 'L') === null;
+}));
+let fingered = 0;
+const BLACK = [1, 3, 6, 8, 10];
+L.LETTERS.forEach(l => [-1, 0, 1].forEach(a => L.SCALE_TYPES.forEach(t => [1, 2].forEach(oct => ['R', 'L'].forEach(h => {
+  const s = scale(l, a, t, { hands: h, octaves: oct });
+  if (L.validateScale(s).length) return;
+  const f = L.scaleFingering(s, h);
+  if (!f) return;
+  const notes = L.scaleColumns(s).map(c => c[h]);
+  const name = `${L.scaleName(s)} ${oct} oct ${h}`;
+  check(`one finger per note: ${name}`, f.length === notes.length);
+  check(`thumb only on white keys: ${name}`, notes.every((n, i) => f[i].finger !== 1 || !BLACK.includes(n.midi % 12)), acc(s, h));
+  check(`no finger twice in a row: ${name}`, f.every((x, i) => i === 0 || x.finger !== f[i - 1].finger), acc(s, h));
+  check(`every crossing uses the thumb: ${name}`, f.every((x, i) => i === 0 || !x.accent || x.finger === 1 || f[i - 1].finger === 1), acc(s, h));
+  fingered++;
+})))));
+check('fingering checked on 100+ scales', fingered >= 100, `only ${fingered}`);
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

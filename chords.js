@@ -418,8 +418,196 @@ function transposeLabel(label, semis, steps) {
   return s;
 }
 
+/* ---------- Scales ----------
+   Spelled by letter like chords: degree i is the tonic letter plus i letters, with whatever accidental
+   reaches the right semitone. Melodic minor goes down as natural minor. */
+const SCALE_TYPES = ['major', 'natural', 'harmonic', 'melodic'];
+const SCALE_NAMES = { major: 'major', natural: 'natural minor', harmonic: 'harmonic minor', melodic: 'melodic minor' };
+const SCALE_STEPS = {
+  major: [0, 2, 4, 5, 7, 9, 11], natural: [0, 2, 3, 5, 7, 8, 10],
+  harmonic: [0, 2, 3, 5, 7, 8, 11], melodic: [0, 2, 3, 5, 7, 9, 11]
+};
+const SCALE_HANDS = ['R', 'L', 'both'];
+const FIFTHS = { F: -1, C: 0, G: 1, D: 2, A: 3, E: 4, B: 5 };
+const fifthsOf = n => FIFTHS[n.letter] + 7 * n.acc;
+// Sharps (+) or flats (−) in the key signature: the major key, or the relative major of a minor key.
+const keySignature = s => fifthsOf(s.tonic) - (s.type === 'major' ? 0 : 3);
+// Letter → accidental the key signature gives it.
+function keySignatureMap(sig) {
+  const map = { C: 0, D: 0, E: 0, F: 0, G: 0, A: 0, B: 0 };
+  'FCGDAEB'.slice(0, Math.max(sig, 0)).split('').forEach(l => { map[l] = 1; });
+  'BEADGCF'.slice(0, Math.max(-sig, 0)).split('').forEach(l => { map[l] = -1; });
+  return map;
+}
+function newScale(tonic) {
+  return { tonic: { letter: tonic.letter, acc: tonic.acc || 0 }, type: 'major', octaves: 1, hands: 'both', dir: 'updown' };
+}
+const scaleName = s => noteName(s.tonic) + ' ' + SCALE_NAMES[s.type];
+// The same tonic spelled with the neighbouring letter (G♯ → A♭), used to suggest a key that exists.
+function enharmonicTonic(n) {
+  const pc = pcOf(n);
+  for (const d of [1, -1]) {
+    const li = mod(letterIndex(n.letter) + d, 7), acc = wrapAcc(pc - NAT[li]);
+    if (Math.abs(acc) <= 1) return { letter: LETTERS[li], acc };
+  }
+  return null;
+}
+function validateScale(s) {
+  if (Math.abs(keySignature(s)) <= 7) return [];
+  const alt = enharmonicTonic(s.tonic);
+  const other = alt && Math.abs(keySignature(Object.assign({}, s, { tonic: alt }))) <= 7 ? ` Use ${scaleName(Object.assign({}, s, { tonic: alt }))}.` : '';
+  return [`${scaleName(s)} has no key signature.${other}`];
+}
+function sanitizeScale(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const tonic = cleanNote(raw.tonic);
+  if (!tonic || Math.abs(tonic.acc) > 1) return null;
+  const s = newScale(tonic);
+  if (SCALE_TYPES.includes(raw.type)) s.type = raw.type;
+  if (raw.octaves === 2) s.octaves = 2;
+  if (SCALE_HANDS.includes(raw.hands)) s.hands = raw.hands;
+  if (raw.dir === 'up') s.dir = 'up';
+  if (s.hands === 'both') s.octaves = 1;
+  return validateScale(s).length ? null : s;
+}
+// Spelled notes from the tonic in the given octave, ascending, for one octave or two.
+function scaleRun(s, octave, steps) {
+  const li0 = letterIndex(s.tonic.letter), pc0 = pcOf(s.tonic), out = [];
+  for (let i = 0; i <= 7 * s.octaves; i++) {
+    const li = mod(li0 + i, 7);
+    const oct = octave + Math.floor((li0 + i) / 7);
+    const acc = wrapAcc(pc0 + steps[i % 7] - NAT[li]);
+    out.push({ letter: LETTERS[li], acc, octave: oct, midi: 12 * (oct + 1) + NAT[li] + acc, name: noteName({ letter: LETTERS[li], acc }) });
+  }
+  return out;
+}
+// Where each hand plays: right hand from the tonic above middle C, left hand an octave lower,
+// or two octaves lower when both hands play so their keys don't overlap.
+const scaleOctaves = s => ({ R: 4, L: s.hands === 'both' ? 2 : 3 });
+// The scale as columns of notes for the staff: { R: note|null, L: note|null } per beat.
+function scaleColumns(s) {
+  const oct = scaleOctaves(s), hands = s.hands === 'both' ? ['R', 'L'] : [s.hands];
+  const runs = {};
+  hands.forEach(h => {
+    const up = scaleRun(s, oct[h], SCALE_STEPS[s.type]);
+    let down = [];
+    if (s.dir === 'updown') down = scaleRun(s, oct[h], SCALE_STEPS[s.type === 'melodic' ? 'natural' : s.type]).reverse().slice(1);
+    runs[h] = up.concat(down);
+    const fing = scaleFingering(s, h);
+    if (fing) runs[h].forEach((n, i) => { n.finger = fing[i].finger; n.accent = fing[i].accent; });
+  });
+  const len = runs[hands[0]].length;
+  return Array.from({ length: len }, (_, i) => ({ R: runs.R ? runs.R[i] : null, L: runs.L ? runs.L[i] : null }));
+}
+// Keys to mark on the keyboard: the ascending form for each hand, with its fingers when there are any.
+// accent: the starting finger or a crossing on the way up.
+function scaleMarks(s) {
+  const oct = scaleOctaves(s), out = [];
+  (s.hands === 'both' ? ['R', 'L'] : [s.hands]).forEach(h => {
+    const fing = scaleFingering(Object.assign({}, s, { dir: 'up' }), h);
+    scaleRun(s, oct[h], SCALE_STEPS[s.type]).forEach((n, i) => out.push({
+      midi: n.midi, hand: h, name: n.name, finger: fing ? fing[i].finger : null, accent: fing ? fing[i].accent : false }));
+  });
+  return out;
+}
+function applyScale(s, group, value) {
+  const n = JSON.parse(JSON.stringify(s));
+  switch (group) {
+    case 'tonic': n.tonic = { letter: value, acc: 0 }; break;
+    case 'tonicAcc': n.tonic.acc = value; break;
+    case 'type': n.type = value; break;
+    case 'octaves': n.octaves = value; break;
+    case 'hands': n.hands = value; break;
+    case 'dir': n.dir = value; break;
+  }
+  // A tonic that has no key signature in this type (G♯ major) usually has one in the other
+  // (G♯ minor), so picking it switches between major and minor instead of being refused.
+  if ((group === 'tonic' || group === 'tonicAcc') && validateScale(n).length) {
+    const other = Object.assign({}, n, { type: n.type === 'major' ? 'natural' : 'major' });
+    if (!validateScale(other).length) return other;
+  }
+  return n;
+}
+function scaleOptionReason(s, group, value) {
+  if (!s) return group === 'tonic' ? null : 'Pick a tonic first.';
+  const n = applyScale(s, group, value);
+  if (n.hands === 'both' && n.octaves === 2) return 'Both hands fit on the keyboard for one octave only.';
+  return validateScale(n)[0] || null;
+}
+function isScaleOn(s, group, value) {
+  if (!s) return false;
+  if (group === 'tonic') return s.tonic.letter === value;
+  if (group === 'tonicAcc') return s.tonic.acc === value;
+  return s[group] === value;
+}
+/* ---------- Scale fingering ----------
+   Standard fingerings as Alfred's Complete Book of Scales gives them, by the tonic's pitch class, so
+   enharmonic keys share them (D♭ and C♯ major are the same keys). One octave going up, right hand and
+   left hand. Natural minor uses the harmonic minor fingering, except G♯/A♭ where its 7th (F♯) is a
+   black key and the left hand changes. Melodic minor on a black-key tonic
+   changes fingers between going up and coming down; those aren't entered yet, so they have none. */
+const FINGERING = {
+  major: [
+    ['12312345', '54321321'], ['23123412', '32143213'], ['12312345', '54321321'], ['31234123', '32143213'],
+    ['12312345', '54321321'], ['12341234', '54321321'], ['23412312', '43213214'], ['12312345', '54321321'],
+    ['34123123', '32143213'], ['12312345', '54321321'], ['21231234', '32143213'], ['12312345', '43214321']],
+  minor: [
+    ['12312345', '54321321'], ['34123123', '32143213'], ['12312345', '54321321'], ['31234123', '21432132'],
+    ['12312345', '54321321'], ['12341234', '54321321'], ['34123123', '43213214'], ['12312345', '54321321'],
+    ['34123123', '32143213'], ['12312345', '54321321'], ['21231234', '21321432'], ['12312345', '43214321']],
+  natural: { 8: ['34123123', '32132143'] }
+};
+const MELODIC_BLACK = [1, 3, 6, 8, 10];
+// One-octave fingers for a hand, or null when there's no fingering for this scale.
+function octaveFingers(s, hand) {
+  const pc = pcOf(s.tonic);
+  if (s.type === 'melodic' && MELODIC_BLACK.includes(pc)) return null;
+  const row = s.type === 'major' ? FINGERING.major[pc] : (s.type === 'natural' && FINGERING.natural[pc]) || FINGERING.minor[pc];
+  return row[hand === 'R' ? 0 : 1].split('').map(Number);
+}
+// Fingers going up, over one or two octaves. The left hand repeats its octave pattern from the second
+// note; the right hand passes through the middle tonic with the finger that keeps the pattern going
+// (the thumb after a 5, as in C major, and in F, which ends on 4 but crosses with the thumb).
+function runFingers(s, hand) {
+  const f = octaveFingers(s, hand);
+  if (!f) return null;
+  if (s.octaves === 1) return f;
+  if (hand === 'L') return f.concat(f.slice(1));
+  const mid = f[7] === 5 || pcOf(s.tonic) === 5 ? 1 : f[7];
+  return f.slice(0, 7).concat([mid], f.slice(1, 7), [f[7]]);
+}
+// Fingers in playing order (up, then down if the scale comes back), with the starting finger and every
+// crossing marked: a thumb passing under or a finger passing over, where the next finger isn't the
+// neighbour of the last one in the direction the hand is moving.
+function scaleFingering(s, hand) {
+  const up = runFingers(s, hand);
+  if (!up) return null;
+  const seq = s.dir === 'updown' ? up.concat(up.slice(0, -1).reverse()) : up;
+  const top = up.length - 1;
+  return seq.map((f, i) => {
+    if (i === 0) return { finger: f, accent: true };
+    const rising = i <= top, step = (hand === 'R') === rising ? 1 : -1;
+    return { finger: f, accent: f !== seq[i - 1] + step };
+  });
+}
+
+// A scale is read through its key signature, so after transposing, the tonic takes whichever spelling
+// has fewer sharps or flats (B♭ minor, not A♯ minor), and never one with no key signature (G♯ major).
+function transposeScale(s, semis, steps) {
+  const n = JSON.parse(JSON.stringify(s));
+  n.tonic = transposeNote(s.tonic, semis, steps);
+  const alt = enharmonicTonic(n.tonic);
+  if (alt) {
+    const m = Object.assign({}, n, { tonic: alt });
+    if (!validateScale(m).length && (validateScale(n).length || Math.abs(keySignature(m)) < Math.abs(keySignature(n)))) n.tonic = alt;
+  }
+  return validateScale(n).length ? s : n;
+}
+
 const ChordLib = {
   LETTERS, NAT, QUALITIES, SEVENTHS, EXTS, ALT_KEYS, ALT_TEXT, ADD_KEYS, OMIT_KEYS,
+  SCALE_TYPES, SCALE_NAMES, keySignature, keySignatureMap, newScale, scaleName, validateScale, sanitizeScale,
+  scaleColumns, scaleMarks, scaleFingering, applyScale, scaleOptionReason, isScaleOn, transposeScale,
   emptyChord, normalize, validate, tones, spell, render, parse, sanitize, apply, optionReason, isOn, closeVoicing,
   transposeNote, letterShift, transposeChord, labelNotes, transposeLabel,
   noteName, pcOf

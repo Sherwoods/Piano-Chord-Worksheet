@@ -152,6 +152,9 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .row { display: grid; column-gap: 29px; align-items: center; position: relative; }
 .cell { position: relative; min-width: 0; border-radius: 6px; }
 .cell-name { display: block; border-bottom: 1px solid #7A8190; max-width: 240px; height: 30px; font-size: 19px; line-height: 30px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
+/* Row label (Verse, Chorus...): a small tag on the first chord's name line, so it takes no height. */
+.cell-name.has-label { max-width: 330px; }
+.row-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #7D1D2C; margin-right: 8px; }
 .cell svg.kbd { display: block; width: 100%; height: auto; max-height: var(--kh, 999px); }
 /* The grand staff sits between the chord name and the keyboard; the keyboard gives up the staff's height,
    which each cell sets as --staff-h (the staff grows to fit high notes and fingers). */
@@ -418,7 +421,8 @@ function sanitizeSheet(s) {
     const rows = (Array.isArray(p && p.rows) ? p.rows : []).slice(0, MAX_ROWS).map(r => {
       const n = [1, 2, 3].includes(r && r.n) ? r.n : 2;
       const cells = Array.from({ length: n }, (_, i) => sanitizeCell(r.cells && r.cells[i], n));
-      return { n, cells };
+      const label = typeof (r && r.label) === 'string' ? r.label.trim().slice(0, 20) : '';
+      return label ? { n, cells, label } : { n, cells };
     });
     return { rows: rows.length ? rows : [newRow(2)] };
   });
@@ -700,12 +704,12 @@ function pageScale() {
   return Math.max(0.2, w / 816);
 }
 
-function cellHTML(cell, n, styles, pi, ri, ci, editable) {
+function cellHTML(cell, n, styles, pi, ri, ci, editable, rowLabel = '') {
   const out = outOfView(cell, n);
   const active = view.editor && view.editor.pi === pi && view.editor.ri === ri && view.editor.ci === ci;
   const staff = cell.staff ? staffSVG(cell, n) : null;
   return `<div class="cell ${active ? 'active' : ''} ${staff ? 'with-staff' : ''}"${staff ? ` style="--staff-h:${staff.height + 4}px"` : ''} data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cellTitle(cell) || 'blank')}"` : ''}>
-    <span class="cell-name"><span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
+    <span class="cell-name${rowLabel ? ' has-label' : ''}">${rowLabel ? `<span class="row-label">${esc(rowLabel)}</span>` : ''}<span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
     ${staff ? staff.svg : ''}
     ${keyboardSVG(cell, n, styles)}
     ${out ? `<span class="flag">${out} note${out > 1 ? 's' : ''} out of view</span>` : ''}
@@ -746,7 +750,7 @@ function renderSheet() {
             <div class="rows" style="grid-template-rows:repeat(${rowTracks(p.rows.length, pageHasStaff(p))}, minmax(0, 1fr)); --kh:${kbMax(p.rows.length, pageHasStaff(p))}px">
               ${p.rows.map((r, ri) => `
               <div class="row" style="grid-template-columns:repeat(${r.n}, minmax(0,1fr))">
-                ${r.cells.map((c, ci) => cellHTML(c, r.n, s.styles, pi, ri, ci, editable)).join('')}
+                ${r.cells.map((c, ci) => cellHTML(c, r.n, s.styles, pi, ri, ci, editable, ci === 0 ? r.label : '')).join('')}
                 ${view.layout ? `<div class="row-tools"></div>
                 <div class="layout-row-controls layout-bar">
                   <div class="seg" role="group" aria-label="Chords in this row">
@@ -754,6 +758,7 @@ function renderSheet() {
                   </div>
                   <button class="btn" data-act="row-up" data-pi="${pi}" data-ri="${ri}" ${ri ? '' : 'disabled'} aria-label="Move row up">↑</button>
                   <button class="btn" data-act="row-down" data-pi="${pi}" data-ri="${ri}" ${ri < p.rows.length - 1 ? '' : 'disabled'} aria-label="Move row down">↓</button>
+                  <button class="btn" data-act="row-label" data-pi="${pi}" data-ri="${ri}" aria-label="Row label">${r.label ? 'Label ✓' : 'Label'}</button>
                   <button class="btn danger" data-act="row-del" data-pi="${pi}" data-ri="${ri}" ${p.rows.length > 1 ? '' : 'disabled'} aria-label="Delete row">✕</button>
                 </div>` : ''}
               </div>`).join('')}
@@ -1032,7 +1037,7 @@ function refreshActiveCell() {
   if (!el) return;
   const { s, row, cell } = cellAt(e);
   const tmp = document.createElement('div');
-  tmp.innerHTML = cellHTML(cell, row.n, s.styles, e.pi, e.ri, e.ci, true);
+  tmp.innerHTML = cellHTML(cell, row.n, s.styles, e.pi, e.ri, e.ci, true, e.ci === 0 ? row.label : '');
   el.replaceWith(tmp.firstElementChild);
   const u = app.querySelector('[data-act="undo"]'); if (u) u.disabled = !undoStack.length;
 }
@@ -1136,6 +1141,18 @@ async function setRowN(pi, ri, n) {
   const scaleNote = toLabel ? ' Scales need a row with one keyboard, so their keys stay with the scale name as the label.' : '';
   if (flagged) toast(`${flagged} chord${flagged > 1 ? 's' : ''} no longer fit. Look for the yellow tag.${scaleNote}`);
   else if (toLabel) toast(scaleNote.trim());
+}
+// A short label for a row, like Verse or Chorus, printed before the row's first chord name.
+async function labelRow(pi, ri) {
+  const row = sheet().pages[pi].rows[ri];
+  const v = await dialog({ title: 'Row label', body: 'Prints in small capitals before the first chord name, for example VERSE or CHORUS.', input: row.label || '',
+    buttons: [{ label: 'Cancel', value: null }].concat(row.label ? [{ label: 'Remove', value: 'remove' }] : [], [{ label: 'Save', value: 'input', cls: 'primary' }]) });
+  if (v === null) return;
+  const label = v === 'remove' ? '' : v.slice(0, 20);
+  if (label === (row.label || '')) return;
+  pushUndo();
+  if (label) row.label = label; else delete row.label;
+  touch(); renderSheet();
 }
 async function deleteRow(pi, ri) {
   const s = sheet(); const row = s.pages[pi].rows[ri];
@@ -1519,6 +1536,7 @@ app.addEventListener('click', async e => {
     case 'row-up': moveRow(pi, ri, -1); break;
     case 'row-down': moveRow(pi, ri, 1); break;
     case 'row-del': deleteRow(pi, ri); break;
+    case 'row-label': labelRow(pi, ri); break;
     case 'row-add': addRow(pi); break;
     case 'add-page': addPage(); break;
     case 'dup-page': dupPage(pi); break;

@@ -1,4 +1,4 @@
-Chord Worksheet — install on iPhone/iPad
+Keyboard worksheet builder — install on iPhone/iPad
 
 1. Host this folder on any HTTPS web server (GitHub Pages, Netlify, Cloudflare Pages,
    or your own nginx/Docker). HTTPS is required for offline mode.

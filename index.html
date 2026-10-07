@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chord Worksheet</title>
+<title>Keyboard worksheet builder</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Chords">
+<meta name="apple-mobile-web-app-title" content="Worksheets">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#E9E5DD">
 <link rel="manifest" href="manifest.webmanifest">
@@ -72,6 +72,7 @@ button { cursor: pointer; }
   transition: background-color .12s, border-color .12s;
 }
 .btn:hover { background: var(--stock-raised); border-color: var(--ink-soft); }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
 .btn:active { background: var(--desk); box-shadow: none; }
 .btn.primary { background: var(--felt); border-color: var(--felt-deep); color: #FBF7F4; }
 .btn.primary:hover { background: var(--felt-deep); }
@@ -151,6 +152,9 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 .row { display: grid; column-gap: 29px; align-items: center; position: relative; }
 .cell { position: relative; min-width: 0; border-radius: 6px; }
 .cell-name { display: block; border-bottom: 1px solid #7A8190; max-width: 240px; height: 30px; font-size: 19px; line-height: 30px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
+/* Row label (Verse, Chorus...): a small tag on the first chord's name line, so it takes no height. */
+.cell-name.has-label { max-width: 330px; }
+.row-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #7D1D2C; margin-right: 8px; }
 .cell svg.kbd { display: block; width: 100%; height: auto; max-height: var(--kh, 999px); }
 /* The grand staff sits between the chord name and the keyboard; the keyboard gives up the staff's height,
    which each cell sets as --staff-h (the staff grows to fit high notes and fingers). */
@@ -279,6 +283,7 @@ main { padding: var(--s5) var(--s4) 96px; max-width: 880px; margin: 0 auto; }
 <input type="file" id="importFile" accept=".json,application/json" hidden>
 <script src="chords.js?v=11"></script>
 <script src="staff.js?v=11"></script>
+<script src="examples.js?v=13"></script>
 <script>
 (() => {
 'use strict';
@@ -416,14 +421,15 @@ function sanitizeSheet(s) {
     const rows = (Array.isArray(p && p.rows) ? p.rows : []).slice(0, MAX_ROWS).map(r => {
       const n = [1, 2, 3].includes(r && r.n) ? r.n : 2;
       const cells = Array.from({ length: n }, (_, i) => sanitizeCell(r.cells && r.cells[i], n));
-      return { n, cells };
+      const label = typeof (r && r.label) === 'string' ? r.label.trim().slice(0, 20) : '';
+      return label ? { n, cells, label } : { n, cells };
     });
     return { rows: rows.length ? rows : [newRow(2)] };
   });
   return {
     id: typeof s.id === 'string' ? s.id : uid(),
     name: typeof s.name === 'string' && s.name.trim() ? s.name.slice(0, 80) : 'Untitled sheet',
-    title: typeof s.title === 'string' ? s.title.slice(0, 80) : 'Chord Worksheet',
+    title: typeof s.title === 'string' ? s.title.slice(0, 80) : 'Keyboard Worksheet',
     updated: Number.isFinite(s.updated) ? s.updated : Date.now(),
     styles: sanitizeStyles(s.styles),
     notation: s.notation === 'jazz' ? 'jazz' : 'standard',
@@ -638,11 +644,33 @@ function miniLayout(rows) {
   return `<div class="mini-layout" aria-hidden="true">${rows.map(n => `<div class="mini-row" style="grid-template-columns:repeat(${n},1fr)">${'<div class="mini-cell"></div>'.repeat(n)}</div>`).join('')}</div>`;
 }
 
+function sheetSummary(s) {
+  const chords = s.pages.reduce((a, p) => a + p.rows.reduce((b, r) => b + r.cells.filter(cellHasContent).length, 0), 0);
+  return `${s.pages.length} page${s.pages.length > 1 ? 's' : ''}, ${chords} chord${chords === 1 ? '' : 's'}`;
+}
+// Example sheets that ship with the app (examples.js), cleaned like any import.
+let exampleCache = null;
+function examples() {
+  if (!exampleCache) {
+    const raw = Array.isArray(window.WORKSHEET_EXAMPLES) ? window.WORKSHEET_EXAMPLES : [];
+    exampleCache = raw.filter(s => s && typeof s === 'object').map(sanitizeSheet);
+  }
+  return exampleCache;
+}
+// Opening an example makes it one of your sheets, so the example stays as it was.
+function openExample(i) {
+  const ex = examples()[i]; if (!ex) return;
+  const s = sanitizeSheet(JSON.parse(JSON.stringify(ex)));
+  s.id = uid(); s.updated = Date.now();
+  data.sheets.push(s); persist();
+  openSheet(s.id);
+  toast('This is your copy. Change it however you like.');
+}
 function renderHome() {
-  document.title = 'Chord Worksheet';
+  document.title = 'Keyboard worksheet builder';
   const sheets = [...data.sheets].sort((a, b) => b.updated - a.updated);
   app.innerHTML = `
-  <header class="bar"><h1>Chord Worksheet</h1></header>
+  <header class="bar"><h1>Keyboard worksheet builder</h1><a class="btn quiet" href="help.html">Help</a></header>
   <main class="home">
     <p class="home-intro">Mark the keys for each chord, name it, and print the page. Leave keys or names blank to make an assignment.</p>
     <h2 class="section-title">Start a new sheet</h2>
@@ -651,10 +679,11 @@ function renderHome() {
     </div>
     <h2 class="section-title">Your sheets</h2>
     ${sheets.length ? `<ul class="sheet-list">${sheets.map(s => {
-      const chords = s.pages.reduce((a, p) => a + p.rows.reduce((b, r) => b + r.cells.filter(cellHasContent).length, 0), 0);
-      return `<li><button class="sheet-open" data-open="${s.id}"><strong>${esc(s.name)}</strong><span>${s.pages.length} page${s.pages.length > 1 ? 's' : ''}, ${chords} chord${chords === 1 ? '' : 's'} · ${fmtDate(s.updated)}</span></button>
+      return `<li><button class="sheet-open" data-open="${s.id}"><strong>${esc(s.name)}</strong><span>${sheetSummary(s)} · ${fmtDate(s.updated)}</span></button>
         <button class="btn quiet" data-more="${s.id}" aria-label="More for ${esc(s.name)}">•••</button></li>`;
     }).join('')}</ul>` : `<div class="empty">No saved sheets yet. Pick a layout above to start one.</div>`}
+    ${examples().length ? `<h2 class="section-title">Examples</h2>
+    <ul class="sheet-list">${examples().map((s, i) => `<li><button class="sheet-open" data-example="${i}"><strong>${esc(s.name)}</strong><span>${sheetSummary(s)} · opens a copy</span></button></li>`).join('')}</ul>` : ''}
     <h2 class="section-title">Backup</h2>
     <p class="home-intro">Sheets live on this device. Export a backup now and then, or to move sheets to another device.</p>
     <div class="backup-row">
@@ -675,12 +704,12 @@ function pageScale() {
   return Math.max(0.2, w / 816);
 }
 
-function cellHTML(cell, n, styles, pi, ri, ci, editable) {
+function cellHTML(cell, n, styles, pi, ri, ci, editable, rowLabel = '') {
   const out = outOfView(cell, n);
   const active = view.editor && view.editor.pi === pi && view.editor.ri === ri && view.editor.ci === ci;
   const staff = cell.staff ? staffSVG(cell, n) : null;
   return `<div class="cell ${active ? 'active' : ''} ${staff ? 'with-staff' : ''}"${staff ? ` style="--staff-h:${staff.height + 4}px"` : ''} data-pos="${pi},${ri},${ci}" ${editable ? `data-cell="${pi},${ri},${ci}" role="button" tabindex="0" aria-label="Edit chord ${esc(cellTitle(cell) || 'blank')}"` : ''}>
-    <span class="cell-name"><span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
+    <span class="cell-name${rowLabel ? ' has-label' : ''}">${rowLabel ? `<span class="row-label">${esc(rowLabel)}</span>` : ''}<span class="cell-name-text">${esc(cellTitle(cell))}</span></span>
     ${staff ? staff.svg : ''}
     ${keyboardSVG(cell, n, styles)}
     ${out ? `<span class="flag">${out} note${out > 1 ? 's' : ''} out of view</span>` : ''}
@@ -689,7 +718,7 @@ function cellHTML(cell, n, styles, pi, ri, ci, editable) {
 
 function renderSheet() {
   const s = sheet();
-  document.title = s.name + ' · Chord Worksheet';
+  document.title = s.name + ' · Keyboard worksheet builder';
   const scale = pageScale();
   const editable = !view.layout;
   app.innerHTML = `
@@ -721,7 +750,7 @@ function renderSheet() {
             <div class="rows" style="grid-template-rows:repeat(${rowTracks(p.rows.length, pageHasStaff(p))}, minmax(0, 1fr)); --kh:${kbMax(p.rows.length, pageHasStaff(p))}px">
               ${p.rows.map((r, ri) => `
               <div class="row" style="grid-template-columns:repeat(${r.n}, minmax(0,1fr))">
-                ${r.cells.map((c, ci) => cellHTML(c, r.n, s.styles, pi, ri, ci, editable)).join('')}
+                ${r.cells.map((c, ci) => cellHTML(c, r.n, s.styles, pi, ri, ci, editable, ci === 0 ? r.label : '')).join('')}
                 ${view.layout ? `<div class="row-tools"></div>
                 <div class="layout-row-controls layout-bar">
                   <div class="seg" role="group" aria-label="Chords in this row">
@@ -729,6 +758,7 @@ function renderSheet() {
                   </div>
                   <button class="btn" data-act="row-up" data-pi="${pi}" data-ri="${ri}" ${ri ? '' : 'disabled'} aria-label="Move row up">↑</button>
                   <button class="btn" data-act="row-down" data-pi="${pi}" data-ri="${ri}" ${ri < p.rows.length - 1 ? '' : 'disabled'} aria-label="Move row down">↓</button>
+                  <button class="btn" data-act="row-label" data-pi="${pi}" data-ri="${ri}" aria-label="Row label">${r.label ? 'Label ✓' : 'Label'}</button>
                   <button class="btn danger" data-act="row-del" data-pi="${pi}" data-ri="${ri}" ${p.rows.length > 1 ? '' : 'disabled'} aria-label="Delete row">✕</button>
                 </div>` : ''}
               </div>`).join('')}
@@ -1007,7 +1037,7 @@ function refreshActiveCell() {
   if (!el) return;
   const { s, row, cell } = cellAt(e);
   const tmp = document.createElement('div');
-  tmp.innerHTML = cellHTML(cell, row.n, s.styles, e.pi, e.ri, e.ci, true);
+  tmp.innerHTML = cellHTML(cell, row.n, s.styles, e.pi, e.ri, e.ci, true, e.ci === 0 ? row.label : '');
   el.replaceWith(tmp.firstElementChild);
   const u = app.querySelector('[data-act="undo"]'); if (u) u.disabled = !undoStack.length;
 }
@@ -1111,6 +1141,18 @@ async function setRowN(pi, ri, n) {
   const scaleNote = toLabel ? ' Scales need a row with one keyboard, so their keys stay with the scale name as the label.' : '';
   if (flagged) toast(`${flagged} chord${flagged > 1 ? 's' : ''} no longer fit. Look for the yellow tag.${scaleNote}`);
   else if (toLabel) toast(scaleNote.trim());
+}
+// A short label for a row, like Verse or Chorus, printed before the row's first chord name.
+async function labelRow(pi, ri) {
+  const row = sheet().pages[pi].rows[ri];
+  const v = await dialog({ title: 'Row label', body: 'Prints in small capitals before the first chord name, for example VERSE or CHORUS.', input: row.label || '',
+    buttons: [{ label: 'Cancel', value: null }].concat(row.label ? [{ label: 'Remove', value: 'remove' }] : [], [{ label: 'Save', value: 'input', cls: 'primary' }]) });
+  if (v === null) return;
+  const label = v === 'remove' ? '' : v.slice(0, 20);
+  if (label === (row.label || '')) return;
+  pushUndo();
+  if (label) row.label = label; else delete row.label;
+  touch(); renderSheet();
 }
 async function deleteRow(pi, ri) {
   const s = sheet(); const row = s.pages[pi].rows[ri];
@@ -1406,7 +1448,7 @@ async function saveFile(filename, text) {
 const stamp = () => new Date().toISOString().slice(0, 10);
 const safeName = n => n.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 40) || 'sheet';
 function exportAll() {
-  saveFile(`chord-worksheets-${stamp()}.json`, JSON.stringify({ app: 'chord-worksheet', version: 1, settings: data.settings, sheets: data.sheets }, null, 1));
+  saveFile(`keyboard-worksheets-${stamp()}.json`, JSON.stringify({ app: 'chord-worksheet', version: 1, settings: data.settings, sheets: data.sheets }, null, 1));
 }
 function exportOne(s) {
   saveFile(`${safeName(s.name)}.json`, JSON.stringify({ app: 'chord-worksheet', version: 1, sheets: [s] }, null, 1));
@@ -1432,7 +1474,7 @@ document.getElementById('importFile').addEventListener('change', async e => {
     persist(); render();
     toast(added || replaced ? `Imported ${added + replaced} sheet${added + replaced > 1 ? 's' : ''}` : 'Nothing new to import');
   } catch (err) {
-    toast('That file isn’t a Chord Worksheet backup.');
+    toast('That file isn’t a Keyboard worksheet builder backup.');
   }
 });
 
@@ -1474,6 +1516,7 @@ app.addEventListener('click', async e => {
   const st = e.target.closest('[data-starter]');
   if (st) return createSheet(STARTERS[+st.dataset.starter]);
   const op = e.target.closest('[data-open]'); if (op) return openSheet(op.dataset.open);
+  const ex = e.target.closest('[data-example]'); if (ex) return openExample(+ex.dataset.example);
   const mo = e.target.closest('[data-more]'); if (mo) return sheetMenu(mo.dataset.more);
   const c = e.target.closest('[data-cell]');
   if (c && !view.layout) { const [pi, ri, ci] = c.dataset.cell.split(',').map(Number); return openEditor(pi, ri, ci); }
@@ -1493,6 +1536,7 @@ app.addEventListener('click', async e => {
     case 'row-up': moveRow(pi, ri, -1); break;
     case 'row-down': moveRow(pi, ri, 1); break;
     case 'row-del': deleteRow(pi, ri); break;
+    case 'row-label': labelRow(pi, ri); break;
     case 'row-add': addRow(pi); break;
     case 'add-page': addPage(); break;
     case 'dup-page': dupPage(pi); break;

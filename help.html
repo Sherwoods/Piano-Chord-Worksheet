@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Worksheet Builder Help</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+/* Help guide for the Keyboard worksheet builder. Same paper-and-felt look as the app; light only. */
+:root {
+  --ink: #23262E; --ink-soft: #4A4D55; --muted: #6E6A62; --rule: #D6D0C4; --rule-strong: #B9B1A3;
+  --desk: #E9E5DD; --stock: #F8F6F1; --felt: #7D1D2C; --felt-wash: #F2E7E5;
+  --serif: 'Source Serif 4', Georgia, serif; --sans: 'Atkinson Hyperlegible', system-ui, sans-serif;
+}
+html { -webkit-text-size-adjust: 100%; background: var(--desk); scroll-padding-top: 12px; }
+body { margin: 0; background: var(--desk); color: var(--ink); font-family: var(--serif); font-size: 17px; line-height: 1.55; }
+main { max-width: 760px; margin: 0 auto; padding: 20px 16px 72px; }
+h1 { font-weight: 600; font-size: 28px; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-weight: 600; font-size: 21px; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 3px double var(--rule-strong); }
+h3 { font-family: var(--sans); font-size: 16px; margin: 22px 0 6px; }
+p, li { max-width: 64ch; }
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 12px; padding-left: 22px; }
+li { margin: 0 0 6px; }
+a { color: var(--felt); }
+.lede { color: var(--ink-soft); font-size: 18px; }
+.top { font-family: var(--sans); font-size: 15px; margin: 0 0 18px; }
+/* Button names as they appear in the app. */
+.b { font-family: var(--sans); font-size: 14px; font-weight: 700; white-space: nowrap; background: var(--stock); border: 1px solid var(--rule-strong); border-radius: 4px; padding: 0 6px; }
+.toc { background: var(--stock); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; margin: 0 0 8px; }
+.toc ol { margin: 0; columns: 2; column-gap: 28px; }
+.toc li { break-inside: avoid; }
+.tip { background: var(--felt-wash); border-left: 3px solid var(--felt); padding: 10px 14px; margin: 0 0 14px; border-radius: 0 6px 6px 0; }
+.tip p:last-child { margin: 0; }
+.ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 0 0 12px; }
+.idea { background: var(--stock); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; }
+.idea strong { font-family: var(--sans); display: block; margin-bottom: 4px; }
+.idea p { margin: 0; font-size: 15px; color: var(--ink-soft); }
+@media (max-width: 560px) { .toc ol { columns: 1; } }
+@media print {
+  html, body { background: #fff; }
+  main { max-width: none; padding: 0; }
+  .top { display: none; }
+  h2 { break-after: avoid; }
+}
+</style>
+</head>
+<body>
+<main>
+  <p class="top"><a href="./">‹ Back to the worksheets</a></p>
+  <h1>How to build a worksheet</h1>
+  <p class="lede">Each worksheet is a printable page of small piano keyboards. You mark keys for the left and right
+    hand, name the chord or scale, and add finger numbers or a grand staff if you want them. Leave things blank to
+    turn the page into an assignment.</p>
+
+  <nav class="toc" aria-label="Contents"><ol>
+    <li><a href="#start">Start a sheet</a></li>
+    <li><a href="#layout">Arrange the page</a></li>
+    <li><a href="#chord">Build a chord</a></li>
+    <li><a href="#keys">Mark keys and fingers</a></li>
+    <li><a href="#scale">Build a scale</a></li>
+    <li><a href="#staff">Add a grand staff</a></li>
+    <li><a href="#transpose">Transpose</a></li>
+    <li><a href="#look">Colors and chord symbols</a></li>
+    <li><a href="#print">Print an answer key and a student copy</a></li>
+    <li><a href="#ideas">Worksheet ideas</a></li>
+    <li><a href="#save">Saving, backup and examples</a></li>
+  </ol></nav>
+
+  <h2 id="start">1. Start a sheet</h2>
+  <p>On the home screen, pick a layout under <span class="b">Start a new sheet</span> and give the sheet a name.
+    The name is only for finding it in your list; it doesn't print.</p>
+  <ul>
+    <li><strong>8 chords</strong>: 4 rows of 2 keyboards.</li>
+    <li><strong>Two hands</strong>: 4 rows of 1 wide keyboard. Use this for scales and two-hand voicings.</li>
+    <li><strong>15 chords</strong>: 5 rows of 3 small keyboards.</li>
+    <li><strong>Mixed</strong>: rows of 3, 2 and 1.</li>
+  </ul>
+  <p>Tap the big title at the top of the page to change what prints there, such as "Major Scales". The Name and Date
+    lines are for your student to fill in.</p>
+  <p>Back on the home screen, the <span class="b">•••</span> button next to a sheet lets you rename, duplicate,
+    export or delete it.</p>
+
+  <h2 id="layout">2. Arrange the page</h2>
+  <p>Tap <span class="b">Layout</span> to change the page. Each row can hold 1, 2 or 3 keyboards: fewer keyboards
+    in a row gives each one more keys. Use the arrows to move a row, <span class="b">✕</span> to delete it and
+    <span class="b">+ Add row</span> to add one. <span class="b">Label</span> gives a row a short tag such as VERSE or
+    CHORUS. It prints in small capitals before the row's first chord name and takes no extra room. Tap
+    <span class="b">Done with layout</span> when you're finished.</p>
+  <p>To move a chord to another spot, drag it. On a phone or tablet, press and hold it first, then drag. The chords
+    in between shift over by one.</p>
+  <p><span class="b">+ Add page</span> at the bottom adds a page with the same layout. In Layout you can also
+    duplicate or delete a page.</p>
+
+  <h2 id="chord">3. Build a chord</h2>
+  <p>Tap any keyboard on the page to open the editor. The <span class="b">‹</span> and <span class="b">›</span>
+    arrows at the top move to the previous or next keyboard without closing it.</p>
+  <p>In the <strong>Builder</strong>, choose <span class="b">Chord</span>, then tap in order:</p>
+  <ol>
+    <li><strong>Root</strong>: a letter, then ♮, ♯ or ♭.</li>
+    <li><strong>Quality</strong>: maj, min, dim, aug, sus2, sus4 or 5.</li>
+    <li><strong>Seventh</strong>: none, 6, 7, maj7 or dim7.</li>
+    <li>Optional: an <strong>extension</strong> (9, 11, 13), <strong>alterations</strong> (♭5, ♯9 and so on),
+      <strong>add and omit</strong>, or a <strong>bass</strong> note for a slash chord like C/E.</li>
+  </ol>
+  <p>Most chords take three taps: G, min, 7 gives Gm7. The chord's name and notes show under the buttons, and the
+    keyboard marks a simple voicing for you, which you can change.</p>
+  <p>Faded buttons aren't allowed with what you've already picked. Tap one and the app says why.</p>
+  <h3>Your own label instead</h3>
+  <p>Type in <strong>Custom label</strong> to print any text instead of a built chord. Type <strong>?</strong> to
+    make a "name this chord" question. If what you type is a chord symbol, like <em>Bb7</em>, the app offers to turn
+    it into a built chord.</p>
+
+  <h2 id="keys">4. Mark keys and fingers</h2>
+  <ul>
+    <li>Choose <span class="b">Left hand</span> or <span class="b">Right hand</span>, then tap keys to mark them.
+      Tap a marked key again to clear it.</li>
+    <li>Choose <span class="b">Add finger numbers</span> and a finger from 1 to 5, then tap keys. The numbers print
+      under the keyboard. Choose <span class="b">Mark notes</span> to go back to marking.</li>
+    <li>Use <span class="b">«</span> <span class="b">‹</span> <span class="b">›</span> <span class="b">»</span> to
+      slide the keyboard by a key or an octave if notes don't fit. A yellow tag on the page means a marked note is out
+      of view.</li>
+    <li><span class="b">♯</span> and <span class="b">♭</span> pick how black keys are named when they aren't part of
+      a built chord or scale.</li>
+    <li><span class="b">Copy to next</span> copies this keyboard to the next one so you can change it a little.
+      <span class="b">Clear notes</span> clears marks and fingers; <span class="b">Clear all</span> clears
+      everything.</li>
+  </ul>
+
+  <h2 id="scale">5. Build a scale</h2>
+  <p>Scales need the wide keyboard, so they're only available in rows with 1 keyboard (the <strong>Two hands</strong>
+    layout, or set a row to 1 in Layout). In the Builder, choose <span class="b">Scale</span>, then pick:</p>
+  <ul>
+    <li><strong>Tonic</strong>: a letter, then ♮, ♯ or ♭.</li>
+    <li><strong>Type</strong>: major, natural minor, harmonic minor or melodic minor.</li>
+    <li><strong>Octaves</strong>: 1 or 2.</li>
+    <li><strong>Hands</strong>: right, left or both. Both hands play two octaves apart, one octave each.</li>
+    <li><strong>Direction</strong>: up, or up and down.</li>
+  </ul>
+  <p>The scale marks its keys and fills in the standard fingering. Red finger numbers are the starting finger and each
+    place the hand crosses (thumb under or finger over). Tap a different finger on a key to change it. Your change
+    replaces the standard finger and loses the red.</p>
+  <div class="tip"><p>The fingerings follow Alfred's <em>Complete Book of Scales</em>. Melodic minor scales that start on
+    a black key don't have fingering yet; tap those in yourself. You can check every fingering on the
+    <a href="fingerings.html">fingering page</a>.</p></div>
+  <p>Keys with no key signature, like G♯ major, aren't offered. The app suggests the other spelling (A♭ major). If you
+    pick a tonic that only exists in the other mode, it switches between major and minor and tells you.</p>
+
+  <h2 id="staff">6. Add a grand staff</h2>
+  <p>In the editor, tap <span class="b">Show above the keyboard</span> to put a grand staff between the name and the
+    keyboard. Right-hand keys go on the treble staff and left-hand keys on the bass.</p>
+  <ul>
+    <li>A <strong>chord</strong> shows as one stacked chord in quarter notes.</li>
+    <li>A <strong>scale</strong> shows note by note with its key signature and finger numbers, going up and back
+      down if you chose that.</li>
+  </ul>
+  <div class="tip"><p>The staff takes room from the keyboard. On a page with a staff, 3 rows or fewer keep the
+    keyboards near full size.</p></div>
+
+  <h2 id="transpose">7. Transpose</h2>
+  <ul>
+    <li><strong>The whole sheet</strong>: tap <span class="b">Transpose</span> at the top, step up or down by half
+      steps and check the preview. Each chord's keys move up or down, whichever stays closer to middle C.</li>
+    <li><strong>As a copy</strong>: tick <em>Make a transposed copy</em> to keep the original and get a new sheet in
+      the new key. This is the quick way to make the same worksheet in every key.</li>
+    <li><strong>One keyboard</strong>: in the editor, use <span class="b">− ½ step</span> and
+      <span class="b">+ ½ step</span>.</li>
+  </ul>
+
+  <h2 id="look">8. Colors and chord symbols</h2>
+  <p><span class="b">Hands</span> sets how marked keys look for each hand: a solid color, a pattern or a dot, with
+    the note name if you like. If the two hands might look alike on a black-and-white printer, the app warns you. Pick
+    one dark and one light color, or different styles.</p>
+  <p><span class="b">Symbols</span> switches chord names between Standard (Cmaj7, Cm7, Cdim) and Jazz (C∆7, C–7, C°),
+    and between Plain spelling, which avoids double sharps and flats, and Strict.</p>
+
+  <h2 id="print">9. Print an answer key and a student copy</h2>
+  <p>Tap <span class="b">Print</span>. Leave everything on for your answer key. Turn things off for a student
+    copy:</p>
+  <ul>
+    <li><strong>Chord names</strong> off: students name the chords.</li>
+    <li><strong>Marked notes</strong> off: students mark the keys (finger numbers hide too).</li>
+    <li><strong>Notes on the grand staff</strong> off: students write the notes on blank staves.</li>
+    <li><strong>Student name and date lines</strong>: on or off.</li>
+  </ul>
+  <div class="tip"><p>For the same result every time, set Scale to 100% (not "Fit to page") and turn off headers and
+    footers in the print window. On iPhone and iPad the app already shrinks the page slightly so the last row prints
+    correctly.</p></div>
+
+  <h2 id="ideas">10. Worksheet ideas</h2>
+  <div class="ideas">
+    <div class="idea"><strong>Name the chord</strong><p>Build chords, then print with Chord names off.</p></div>
+    <div class="idea"><strong>Mark the keys</strong><p>Build chords, then print with Marked notes off.</p></div>
+    <div class="idea"><strong>Write it on the staff</strong><p>Turn on the staff, then print with Notes on the grand staff off.</p></div>
+    <div class="idea"><strong>Scale practice</strong><p>Two hands layout, one scale per row, staff on, fingering in.</p></div>
+    <div class="idea"><strong>Every key</strong><p>Make one sheet, then Transpose as a copy for each key.</p></div>
+    <div class="idea"><strong>Mystery chord</strong><p>Mark keys and type ? as the custom label.</p></div>
+  </div>
+
+  <h2 id="save">11. Saving, backup and examples</h2>
+  <p>Everything saves as you go, on this device only. <span class="b">Undo</span> steps back through your changes
+    to the open sheet.</p>
+  <ul>
+    <li><span class="b">Export all sheets</span> on the home screen saves a backup file. Use it now and then, and to
+      move sheets to another device with <span class="b">Import sheets</span>.</li>
+    <li>On iPhone or iPad, use Share, then Add to Home Screen, to install the app. Open it once while online, and
+      after that it works offline.</li>
+    <li>If the home screen shows <strong>Examples</strong>, tap one to open your own copy to use or change.</li>
+  </ul>
+</main>
+</body>
+</html>

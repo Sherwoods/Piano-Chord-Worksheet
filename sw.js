@@ -1,6 +1,6 @@
 // Keyboard worksheet builder service worker: offline support.
-const CACHE = 'chord-worksheet-v12';
-const CORE = ['./', './index.html', './chords.js?v=11', './staff.js?v=11', './fingerings.html', './help.html', './examples.js?v=12', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'chord-worksheet-v13';
+const CORE = ['./', './index.html', './chords.js?v=11', './staff.js?v=11', './fingerings.html', './help.html', './examples.js?v=13', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));

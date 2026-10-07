@@ -1,4 +1,4 @@
-/* Chord Worksheet: chord model, spelling, notation and parsing.
+/* Keyboard worksheet builder: chord model, spelling, notation and parsing.
    No dependencies. Loaded in the browser as window.ChordLib and in Node via require(). */
 (function (root) {
 'use strict';

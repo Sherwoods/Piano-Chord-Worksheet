@@ -1,4 +1,4 @@
-/* Chord Worksheet: grand staff drawing. No dependencies. Loaded in the browser as window.StaffLib
+/* Keyboard worksheet builder: grand staff drawing. No dependencies. Loaded in the browser as window.StaffLib
    and in Node via require().
 
    The clef, notehead, accidental and brace outlines come from the Bravura music font,

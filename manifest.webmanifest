@@ -1,6 +1,6 @@
 {
-  "name": "Chord Worksheet",
-  "short_name": "Chords",
+  "name": "Keyboard worksheet builder",
+  "short_name": "Worksheets",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
